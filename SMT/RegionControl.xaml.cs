@@ -79,6 +79,7 @@ namespace SMT
         private System.Windows.Media.Imaging.BitmapImage stormImageExp;
         private System.Windows.Media.Imaging.BitmapImage stormImageKin;
         private System.Windows.Media.Imaging.BitmapImage stormImageTherm;
+        private readonly Dictionary<string, System.Windows.Media.Imaging.BitmapImage> upgradeIconCache = new Dictionary<string, System.Windows.Media.Imaging.BitmapImage>(StringComparer.OrdinalIgnoreCase);
 
         private EVEData.EveManager.JumpShip jumpShipType;
         private LocalCharacter m_ActiveCharacter;
@@ -96,6 +97,7 @@ namespace SMT
         private bool m_ShowSystemADM;
         private bool m_ShowSystemSecurity;
         private bool m_ShowSystemTimers;
+        private bool m_ShowInfrastructureUpgrades;
         private Dictionary<string, List<KeyValuePair<int, string>>> NameTrackingLocationMap = new Dictionary<string, List<KeyValuePair<int, string>>>();
         private long SelectedAlliance;
         private bool showJumpDistance;
@@ -437,6 +439,19 @@ namespace SMT
             }
         }
 
+        public bool ShowInfrastructureUpgrades
+        {
+            get
+            {
+                return m_ShowInfrastructureUpgrades;
+            }
+            set
+            {
+                m_ShowInfrastructureUpgrades = value;
+                OnPropertyChanged("ShowInfrastructureUpgrades");
+            }
+        }
+
         public List<InfoItem> InfoLayer { get; set; }
 
         public void AddSovConflictsToMap()
@@ -770,6 +785,7 @@ namespace SMT
             ShowSystemADM = MapConf.ToolBox_ShowSystemADM;
             ShowSystemSecurity = MapConf.ToolBox_ShowSystemSecurity;
             ShowSystemTimers = MapConf.ToolBox_ShowSystemTimers;
+            ShowInfrastructureUpgrades = MapConf.ToolBox_ShowInfrastructureUpgrades;
             ESIOverlayScale = MapConf.ToolBox_ESIOverlayScale;
 
             SelectRegion(MapConf.DefaultRegion);
@@ -1964,33 +1980,7 @@ namespace SMT
                 }
             }
 
-            // Draw Infrastructure Upgrade indicators (green circles)
-            Brush SysOutlineBrush = new SolidColorBrush(MapConf.ActiveColourScheme.SystemOutlineColour);
-            foreach(KeyValuePair<string, EVEData.MapSystem> kvp in Region.MapSystems)
-            {
-                EVEData.MapSystem sys = kvp.Value;
-                bool isSystemOOR = sys.OutOfRegion;
-
-                if(Region.MetaRegion)
-                {
-                    isSystemOOR = !sys.ActualSystem.FactionWarSystem;
-                }
-
-                if(!isSystemOOR && sys.ActualSystem.InfrastructureUpgrades.Count > 0)
-                {
-                    Shape UpgradeIndicator = new Ellipse { Width = 6, Height = 6 };
-                    UpgradeIndicator.Stroke = SysOutlineBrush;
-                    UpgradeIndicator.StrokeThickness = 1.0;
-                    UpgradeIndicator.StrokeLineJoin = PenLineJoin.Round;
-                    UpgradeIndicator.Fill = new SolidColorBrush(Colors.LimeGreen);
-
-                    Canvas.SetLeft(UpgradeIndicator, sys.Layout.X - 14);
-                    Canvas.SetTop(UpgradeIndicator, sys.Layout.Y - 3);
-                    Canvas.SetZIndex(UpgradeIndicator, ZINDEX_CYNOBEACON);
-                    MainCanvas.Children.Add(UpgradeIndicator);
-                    DynamicMapElements.Add(UpgradeIndicator);
-                }
-            }
+            // Infrastructure upgrade icons are now rendered inline with system text.
         }
 
         private Brush Gallente_FL = new SolidColorBrush(Color.FromArgb(100, 73, 171, 104));
@@ -2209,6 +2199,103 @@ namespace SMT
                     }
                 }
             }
+        }
+
+        private bool IsUpgradeIconVisible(string displayName)
+        {
+            if(MapConf == null || MapConf.InfrastructureUpgradeIconFilter == null || MapConf.InfrastructureUpgradeIconFilter.Count == 0)
+            {
+                return true;
+            }
+
+            return MapConf.InfrastructureUpgradeIconFilter.Any(name => string.Equals(name, displayName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private System.Windows.Media.Imaging.BitmapImage GetUpgradeIcon(string displayName)
+        {
+            if(string.IsNullOrWhiteSpace(displayName))
+            {
+                return null;
+            }
+
+            if(upgradeIconCache.TryGetValue(displayName, out var cached))
+            {
+                return cached;
+            }
+
+            if(!SovUpgradeIconCatalog.TryGetIconPath(displayName, out string iconPath))
+            {
+                upgradeIconCache[displayName] = null;
+                return null;
+            }
+
+            var image = ResourceLoader.LoadBitmapFromResource(iconPath);
+            upgradeIconCache[displayName] = image;
+            return image;
+        }
+
+        private FrameworkElement BuildUpgradeIconsPanel(EVEData.MapSystem mapSystem, double iconSize, out double panelHeight)
+        {
+            panelHeight = 0;
+
+            if(!ShowInfrastructureUpgrades || mapSystem == null)
+            {
+                return null;
+            }
+
+            if(mapSystem.ActualSystem == null || mapSystem.ActualSystem.InfrastructureUpgrades == null || mapSystem.ActualSystem.InfrastructureUpgrades.Count == 0)
+            {
+                return null;
+            }
+
+            var upgradesToShow = mapSystem.ActualSystem.InfrastructureUpgrades
+                .OrderBy(u => u.SlotNumber)
+                .Where(u => IsUpgradeIconVisible(u.DisplayName))
+                .ToList();
+
+            if(upgradesToShow.Count == 0)
+            {
+                return null;
+            }
+
+            WrapPanel panel = new WrapPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                ItemWidth = iconSize,
+                ItemHeight = iconSize,
+                Margin = new Thickness(0, 1, 0, 0)
+            };
+
+            foreach(var upgrade in upgradesToShow)
+            {
+                var icon = GetUpgradeIcon(upgrade.DisplayName);
+                if(icon == null)
+                {
+                    continue;
+                }
+
+                Image img = new Image
+                {
+                    Width = iconSize,
+                    Height = iconSize,
+                    Source = icon,
+                    Stretch = Stretch.Uniform,
+                    IsHitTestVisible = false,
+                    ToolTip = upgrade.DisplayName
+                };
+
+                RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
+                panel.Children.Add(img);
+            }
+
+            if(panel.Children.Count == 0)
+            {
+                return null;
+            }
+
+            panelHeight = iconSize + 2;
+            return panel;
         }
 
         private void AddHighlightToSystem(string name)
@@ -2631,10 +2718,12 @@ namespace SMT
                     MainCanvas.Children.Add(sovADM);
                 }
 
+                double sysTextHeight = SYSTEM_TEXT_HEIGHT;
+
                 Grid sysTextGrid = new Grid
                 {
                     Width = SYSTEM_TEXT_WIDTH,
-                    Height = SYSTEM_TEXT_HEIGHT,
+                    Height = sysTextHeight,
                 };
 
                 StackPanel sp = new StackPanel
@@ -2652,13 +2741,10 @@ namespace SMT
                 }
 
                 sysText.Foreground = SysInRegionTextBrush;
-                double sysTextOffset = SYSTEM_TEXT_Y_OFFSET;
-
                 if(mapSystem.OutOfRegion)
                 {
                     sysText.Foreground = SysOutRegionTextBrush;
                     sysText.FontSize -= 2;
-                    sysTextOffset -= 2;
                 }
 
                 Thickness border = new Thickness(0.0);
@@ -2669,12 +2755,23 @@ namespace SMT
 
                 sp.Children.Add(sysText);
 
+                double iconSize = mapSystem.OutOfRegion ? 9 : 12;
+                FrameworkElement upgradeIcons = BuildUpgradeIconsPanel(mapSystem, iconSize, out double iconPanelHeight);
+                if(upgradeIcons != null)
+                {
+                    sp.Children.Add(upgradeIcons);
+                    sysTextHeight += iconPanelHeight;
+                    sysTextGrid.Height = sysTextHeight;
+                }
+
+                double sysTextYOffset = sysTextHeight / 2;
+
                 switch(mapSystem.TextPos)
                 {
                     case MapSystem.TextPosition.Top:
                         {
                             double spLeft = mapSystem.Layout.X - (SYSTEM_TEXT_X_OFFSET);
-                            double spTop = mapSystem.Layout.Y - (SYSTEM_SHAPE_OFFSET + SYSTEM_TEXT_HEIGHT + 1);
+                            double spTop = mapSystem.Layout.Y - (SYSTEM_SHAPE_OFFSET + sysTextHeight + 1);
                             Canvas.SetLeft(sysTextGrid, spLeft);
                             Canvas.SetTop(sysTextGrid, spTop);
 
@@ -2707,7 +2804,7 @@ namespace SMT
                     case MapSystem.TextPosition.Left:
                         {
                             double spLeft = mapSystem.Layout.X - (SYSTEM_SHAPE_OFFSET + SYSTEM_TEXT_WIDTH + 3);
-                            double spTop = mapSystem.Layout.Y - (SYSTEM_TEXT_Y_OFFSET);
+                            double spTop = mapSystem.Layout.Y - (sysTextYOffset);
                             Canvas.SetLeft(sysTextGrid, spLeft);
                             Canvas.SetTop(sysTextGrid, spTop);
 
@@ -2722,7 +2819,7 @@ namespace SMT
                     case MapSystem.TextPosition.Right:
                         {
                             double spLeft = mapSystem.Layout.X + SYSTEM_SHAPE_OFFSET + 3;
-                            double spTop = mapSystem.Layout.Y - SYSTEM_TEXT_Y_OFFSET;
+                            double spTop = mapSystem.Layout.Y - sysTextYOffset;
                             Canvas.SetLeft(sysTextGrid, spLeft);
                             Canvas.SetTop(sysTextGrid, spTop);
                             sp.VerticalAlignment = VerticalAlignment.Center;
@@ -3320,6 +3417,27 @@ namespace SMT
             {
                 ReDrawMap(true);
             }), DispatcherPriority.Normal);
+        }
+
+        private void UpgradeFiltersBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if(MapConf == null)
+            {
+                return;
+            }
+
+            SovUpgradeFilterWindow dlg = new SovUpgradeFilterWindow
+            {
+                MapConf = MapConf,
+                Owner = Window.GetWindow(this)
+            };
+
+            bool? result = dlg.ShowDialog();
+            if(result == true)
+            {
+                ShowInfrastructureUpgrades = dlg.ShowUpgrades;
+                ReDrawMap(true);
+            }
         }
 
         /// <summary>

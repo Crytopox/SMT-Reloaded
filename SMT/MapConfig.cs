@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows.Media;
 using System.Xml.Serialization;
@@ -216,6 +217,12 @@ namespace SMT
 
         [Browsable(false)]
         public double ToolBox_ESIOverlayScale { get; set; }
+
+        [Browsable(false)]
+        public bool ToolBox_ShowInfrastructureUpgrades { get; set; }
+
+        [Browsable(false)]
+        public List<string> InfrastructureUpgradeIconFilter { get; set; }
 
         [Browsable(false)]
         public bool Debug_EnableMapEdit { get; set; }
@@ -1358,6 +1365,8 @@ namespace SMT
 
             ToolBox_ShowJumpBridges = true;
             ToolBox_ShowSovOwner = true;
+            ToolBox_ShowInfrastructureUpgrades = true;
+            InfrastructureUpgradeIconFilter = new List<string>();
 
             #if DEBUG
             Debug_EnableMapEdit = true;
