@@ -132,7 +132,18 @@
                 <StackPanel x:Name="AllianceNameListStackPanel" VerticalAlignment="Bottom" />
             </Border>
 
-            <Border BorderThickness="2" BorderBrush="Black" Background="#FF232223" Width="170" Height="140" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" CornerRadius="4" Panel.ZIndex="111"  Visibility="{Binding Path=MapConf.ShowToolBox, Converter={StaticResource BoolToVis}}" Grid.ColumnSpan="3">
+            <Border BorderThickness="2" BorderBrush="Black" Background="#FF232223" Width="170" Height="250" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" CornerRadius="4" Panel.ZIndex="111"  Visibility="{Binding Path=MapConf.ShowToolBox, Converter={StaticResource BoolToVis}}" Grid.ColumnSpan="3" ClipToBounds="True"
+                    ToolTipService.ShowDuration="60000">
+                <Border.ToolTip>
+                    <StackPanel>
+                        <TextBlock FontWeight="Bold" Text="Edit Layout Controls" />
+                        <TextBlock Text="Click+Drag: move selection" />
+                        <TextBlock Text="Ctrl+Click: toggle selection" />
+                        <TextBlock Text="Shift+Drag empty: box select" />
+                        <TextBlock Text="Snap To Grid: align nodes to 25px grid" />
+                        <TextBlock Text="Auto Arrange: initial spacing for clusters" />
+                    </StackPanel>
+                </Border.ToolTip>
                 <Canvas x:Name="ToolBoxCanvas">
                     <Label x:Name="RegionNameLabel" Content="Region" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Top"  Foreground="#14767576" Canvas.Left="-845" Width="840" Height="98" HorizontalContentAlignment="Right" VerticalContentAlignment="Bottom" IsHitTestVisible="False"/>
                     <Grid Canvas.Left="0" Canvas.Top="0" Width="167" HorizontalAlignment="Center">
