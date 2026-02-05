@@ -708,6 +708,7 @@ namespace SMT.EVEData
             Regions.Add(new MapRegion("Venal", "10000015", "Guristas", 1140, 210));
             Regions.Add(new MapRegion("Verge Vendor", "10000068", "Gallente", 490, 660));
             Regions.Add(new MapRegion("Wicked Creek", "10000006", string.Empty, 1580, 1230));
+            Regions.Add(new MapRegion("Wicked Creek Area", "", string.Empty, 1710, 1220));
             Regions.Add(new MapRegion("Pochven", "10000008", "Triglavian", 50, 50));
 
             Regions.Add(new MapRegion("Warzone - Amarr vs Minmatar", "", "Faction War", 50, 120, true));
@@ -778,15 +779,13 @@ namespace SMT.EVEData
                     // create and add the system
                     if(region == rd.Name)
                     {
-                        System s = new System(name, systemID, rd.Name, hasStation, hasIceBelt);
-                        if(GetEveSystem(name) != null)
+                        if(GetEveSystem(name) == null)
                         {
-                            int test = 0;
-                            test++;
+                            System s = new System(name, systemID, rd.Name, hasStation, hasIceBelt);
+                            Systems.Add(s);
+                            NameToSystem[name] = s;
+                            IDToSystem[systemID] = s;
                         }
-                        Systems.Add(s);
-                        NameToSystem[name] = s;
-                        IDToSystem[systemID] = s;
                     }
 
                     // create and add the map version
@@ -2008,6 +2007,418 @@ namespace SMT.EVEData
             return null;
         }
 
+        public void SaveMapLayout()
+        {
+            string layoutFile = Path.Combine(DataRootFolder, "MapLayout.dat");
+            Serialization.SerializeToDisk<List<MapRegion>>(Regions, layoutFile);
+        }
+
+        public void SaveRegionLayoutOverrides(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName))
+            {
+                return;
+            }
+
+            MapRegion region = GetRegion(regionName);
+            if(region == null)
+            {
+                return;
+            }
+
+            RegionLayoutOverrides overrides = new RegionLayoutOverrides
+            {
+                RegionName = regionName,
+                Positions = new SerializableDictionary<string, Vector2>()
+            };
+
+            foreach(MapSystem ms in region.MapSystems.Values)
+            {
+                overrides.Positions[ms.Name] = ms.Layout;
+            }
+
+            string overrideFile = GetLayoutOverrideFileName(regionName);
+            Serialization.SerializeToDisk<RegionLayoutOverrides>(overrides, overrideFile);
+        }
+
+        public void AutoArrangeRegionLayout(string regionName, int iterations = 180)
+        {
+            MapRegion region = GetRegion(regionName);
+            if(region == null)
+            {
+                return;
+            }
+
+            OptimizeRegionLayout(region, iterations, 42.0f);
+            RebuildRegionVoronoiCells(region);
+        }
+
+        private void ApplyLayoutOverrides()
+        {
+            if(Regions == null || Regions.Count == 0)
+            {
+                return;
+            }
+
+            foreach(MapRegion region in Regions)
+            {
+                string overrideFile = GetLayoutOverrideFileName(region.Name);
+                if(!File.Exists(overrideFile))
+                {
+                    continue;
+                }
+
+                RegionLayoutOverrides overrides = Serialization.DeserializeFromDisk<RegionLayoutOverrides>(overrideFile);
+                if(overrides?.Positions == null)
+                {
+                    continue;
+                }
+
+                foreach(KeyValuePair<string, Vector2> kvp in overrides.Positions)
+                {
+                    if(region.MapSystems.ContainsKey(kvp.Key))
+                    {
+                        region.MapSystems[kvp.Key].Layout = kvp.Value;
+                    }
+                }
+
+                RebuildRegionVoronoiCells(region);
+            }
+        }
+
+        private string GetLayoutOverrideFileName(string regionName)
+        {
+            string safeName = SanitizeFileName(regionName);
+            return Path.Combine(SaveDataRootFolder, $"MapLayoutOverrides_{safeName}.dat");
+        }
+
+        private static string SanitizeFileName(string input)
+        {
+            if(string.IsNullOrEmpty(input))
+            {
+                return "Region";
+            }
+
+            char[] invalid = Path.GetInvalidFileNameChars();
+            char[] buffer = input.ToCharArray();
+            for(int i = 0; i < buffer.Length; i++)
+            {
+                if(invalid.Contains(buffer[i]))
+                {
+                    buffer[i] = '_';
+                }
+            }
+            return new string(buffer);
+        }
+
+        private static void OptimizeRegionLayout(MapRegion mr, int iterations, float minSpacing)
+        {
+            List<MapSystem> systems = mr.MapSystems.Values.ToList();
+            int n = systems.Count;
+            if(n < 2)
+            {
+                return;
+            }
+
+            Dictionary<string, int> index = new Dictionary<string, int>(n, StringComparer.Ordinal);
+            for(int i = 0; i < n; i++)
+            {
+                index[systems[i].Name] = i;
+            }
+
+            HashSet<long> edgeSet = new HashSet<long>();
+            List<(int a, int b)> edges = new List<(int a, int b)>();
+
+            foreach(MapSystem ms in systems)
+            {
+                System sys = ms.ActualSystem;
+                if(sys == null)
+                {
+                    continue;
+                }
+
+                int a = index[ms.Name];
+                foreach(string jump in sys.Jumps)
+                {
+                    if(!mr.MapSystems.ContainsKey(jump))
+                    {
+                        continue;
+                    }
+
+                    int b = index[jump];
+                    if(a == b)
+                    {
+                        continue;
+                    }
+
+                    int min = Math.Min(a, b);
+                    int max = Math.Max(a, b);
+                    long key = ((long)min << 32) | (uint)max;
+                    if(edgeSet.Add(key))
+                    {
+                        edges.Add((min, max));
+                    }
+                }
+            }
+
+            if(edges.Count == 0)
+            {
+                return;
+            }
+
+            float minX = float.MaxValue;
+            float minY = float.MaxValue;
+            float maxX = float.MinValue;
+            float maxY = float.MinValue;
+
+            for(int i = 0; i < n; i++)
+            {
+                Vector2 p = systems[i].Layout;
+                if(p.X < minX) minX = p.X;
+                if(p.Y < minY) minY = p.Y;
+                if(p.X > maxX) maxX = p.X;
+                if(p.Y > maxY) maxY = p.Y;
+            }
+
+            float width = Math.Max(1.0f, maxX - minX);
+            float height = Math.Max(1.0f, maxY - minY);
+
+            Vector2[] pos = new Vector2[n];
+            Vector2[] disp = new Vector2[n];
+
+            for(int i = 0; i < n; i++)
+            {
+                pos[i] = systems[i].Layout;
+            }
+
+            float area = width * height;
+            float k = (float)Math.Sqrt(area / n);
+            float t0 = Math.Min(width, height) / 4.0f;
+
+            for(int iter = 0; iter < iterations; iter++)
+            {
+                for(int i = 0; i < n; i++)
+                {
+                    disp[i] = Vector2.Zero;
+                }
+
+                for(int i = 0; i < n; i++)
+                {
+                    for(int j = i + 1; j < n; j++)
+                    {
+                        Vector2 delta = pos[i] - pos[j];
+                        float dist = delta.Length();
+                        if(dist < 0.01f)
+                        {
+                            delta = new Vector2(0.01f, 0.01f);
+                            dist = delta.Length();
+                        }
+
+                        float force = (k * k) / dist;
+                        Vector2 dir = delta / dist;
+                        Vector2 repulse = dir * force;
+                        disp[i] += repulse;
+                        disp[j] -= repulse;
+                    }
+                }
+
+                foreach((int a, int b) in edges)
+                {
+                    Vector2 delta = pos[a] - pos[b];
+                    float dist = delta.Length();
+                    if(dist < 0.01f)
+                    {
+                        delta = new Vector2(0.01f, 0.01f);
+                        dist = delta.Length();
+                    }
+
+                    float force = (dist * dist) / k;
+                    Vector2 dir = delta / dist;
+                    Vector2 attract = dir * force;
+                    disp[a] -= attract;
+                    disp[b] += attract;
+                }
+
+                float t = t0 * (1.0f - (iter / (float)iterations));
+                for(int i = 0; i < n; i++)
+                {
+                    float dispLen = disp[i].Length();
+                    if(dispLen > 0.0f)
+                    {
+                        float step = Math.Min(dispLen, t);
+                        pos[i] += (disp[i] / dispLen) * step;
+                    }
+                }
+            }
+
+            // enforce a minimum spacing to break up dense clusters
+            for(int pass = 0; pass < 10; pass++)
+            {
+                bool moved = false;
+                for(int i = 0; i < n; i++)
+                {
+                    for(int j = i + 1; j < n; j++)
+                    {
+                        Vector2 delta = pos[i] - pos[j];
+                        float dist = delta.Length();
+                        if(dist < 0.01f)
+                        {
+                            delta = new Vector2(0.01f, 0.01f);
+                            dist = delta.Length();
+                        }
+
+                        float s = minSpacing - dist;
+                        if(s > 0)
+                        {
+                            Vector2 dir = delta / dist;
+                            Vector2 push = dir * (s / 2.0f);
+                            pos[i] += push;
+                            pos[j] -= push;
+                            moved = true;
+                        }
+                    }
+                }
+
+                if(!moved)
+                {
+                    break;
+                }
+            }
+
+            float newMinX = float.MaxValue;
+            float newMinY = float.MaxValue;
+            float newMaxX = float.MinValue;
+            float newMaxY = float.MinValue;
+
+            for(int i = 0; i < n; i++)
+            {
+                Vector2 p = pos[i];
+                if(p.X < newMinX) newMinX = p.X;
+                if(p.Y < newMinY) newMinY = p.Y;
+                if(p.X > newMaxX) newMaxX = p.X;
+                if(p.Y > newMaxY) newMaxY = p.Y;
+            }
+
+            float newWidth = Math.Max(1.0f, newMaxX - newMinX);
+            float newHeight = Math.Max(1.0f, newMaxY - newMinY);
+            float scale = Math.Min(width / newWidth, height / newHeight);
+
+            float offsetX = minX + (width - (newWidth * scale)) / 2.0f - (newMinX * scale);
+            float offsetY = minY + (height - (newHeight * scale)) / 2.0f - (newMinY * scale);
+
+            for(int i = 0; i < n; i++)
+            {
+                Vector2 p = pos[i];
+                systems[i].Layout = new Vector2((p.X * scale) + offsetX, (p.Y * scale) + offsetY);
+            }
+        }
+
+        private static void RebuildRegionVoronoiCells(MapRegion mr)
+        {
+            List<MapSystem> systems = mr.MapSystems.Values.ToList();
+            if(systems.Count == 0)
+            {
+                return;
+            }
+
+            float minX = float.MaxValue;
+            float minY = float.MaxValue;
+            float maxX = float.MinValue;
+            float maxY = float.MinValue;
+
+            foreach(MapSystem ms in systems)
+            {
+                Vector2 p = ms.Layout;
+                if(p.X < minX) minX = p.X;
+                if(p.Y < minY) minY = p.Y;
+                if(p.X > maxX) maxX = p.X;
+                if(p.Y > maxY) maxY = p.Y;
+            }
+
+            int division = 5;
+            int minDistance = 100;
+            int minDistanceOOR = 70;
+            int margin = 180;
+
+            List<Vector2f> points = new List<Vector2f>();
+            foreach(MapSystem ms in systems)
+            {
+                points.Add(new Vector2f(ms.Layout.X, ms.Layout.Y));
+            }
+
+            List<Vector2f> fillerPoints = new List<Vector2f>();
+            int startX = (int)Math.Floor(minX - margin);
+            int endX = (int)Math.Ceiling(maxX + margin);
+            int startY = (int)Math.Floor(minY - margin);
+            int endY = (int)Math.Ceiling(maxY + margin);
+
+            for(int ix = startX; ix < endX; ix += division)
+            {
+                for(int iy = startY; iy < endY; iy += division)
+                {
+                    bool add = true;
+
+                    foreach(MapSystem ms in systems)
+                    {
+                        double dx = ms.Layout.X - ix;
+                        double dy = ms.Layout.Y - iy;
+                        double l = Math.Sqrt(dx * dx + dy * dy);
+
+                        if(ms.OutOfRegion)
+                        {
+                            if(l < (minDistanceOOR))
+                            {
+                                add = false;
+                                break;
+                            }
+                        }
+                        else
+                        {
+                            if(l < (minDistance))
+                            {
+                                add = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if(add)
+                    {
+                        fillerPoints.Add(new Vector2f(ix, iy));
+                    }
+                }
+            }
+
+            points.AddRange(fillerPoints);
+
+            Rectf clipRect = new Rectf(minX - margin, minY - margin, (maxX - minX) + 2 * margin, (maxY - minY) + 2 * margin);
+            csDelaunay.Voronoi v = new csDelaunay.Voronoi(points, clipRect, 0);
+
+            int i = 0;
+            foreach(MapSystem ms in systems)
+            {
+                csDelaunay.Site s = v.SitesIndexedByLocation[points[i]];
+                i++;
+
+                List<Vector2f> cellList = s.Region(clipRect);
+                ms.Layout = new Vector2(s.x, s.y);
+
+                ms.CellPoints = new List<Vector2>();
+                foreach(Vector2f vc in cellList)
+                {
+                    float RoundVal = 2.5f;
+
+                    double finalX = vc.x;
+                    double finalY = vc.y;
+
+                    int X = (int)(Math.Round(finalX / RoundVal, 1, MidpointRounding.AwayFromZero) * RoundVal);
+                    int Y = (int)(Math.Round(finalY / RoundVal, 1, MidpointRounding.AwayFromZero) * RoundVal);
+
+                    ms.CellPoints.Add(new Vector2(X, Y));
+                }
+            }
+        }
+
         /// <summary>
         /// Get the System name from the System ID
         /// </summary>
@@ -2108,6 +2519,8 @@ namespace SMT.EVEData
             {
                 SystemIDToName[s.ID] = s.Name;
             }
+
+            ApplyLayoutOverrides();
 
             CharacterIDToName = new SerializableDictionary<int, string>();
             AllianceIDToName = new SerializableDictionary<int, string>();

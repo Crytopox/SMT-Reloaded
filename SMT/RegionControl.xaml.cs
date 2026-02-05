@@ -99,6 +99,14 @@ namespace SMT
         private Dictionary<string, List<KeyValuePair<int, string>>> NameTrackingLocationMap = new Dictionary<string, List<KeyValuePair<int, string>>>();
         private long SelectedAlliance;
         private bool showJumpDistance;
+        private bool m_IsLayoutEditMode;
+        private bool m_SnapToGrid = true;
+        private MapSystem m_DragSystem;
+        private Point m_DragStartPoint;
+        private Vector2 m_DragStartLayout;
+        private DateTime m_LastLayoutRedraw;
+        private const int LAYOUT_REDRAW_MS = 50;
+        private const int LAYOUT_GRID_SIZE = 25;
         private Brush StandingBadBrush = new SolidColorBrush(Color.FromArgb(110, 196, 72, 6));
         private Brush StandingGoodBrush = new SolidColorBrush(Color.FromArgb(110, 43, 101, 196));
         private Brush StandingNeutBrush = new SolidColorBrush(Color.FromArgb(110, 140, 140, 140));
@@ -183,6 +191,10 @@ namespace SMT
             stormImageTherm = ResourceLoader.LoadBitmapFromResource("Images/cloud_thermal.png");
 
             helpIcon.MouseLeftButtonDown += HelpIcon_MouseLeftButtonDown;
+            MainCanvas.MouseMove += MainCanvas_MouseMove;
+            MainCanvas.MouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
+            MainCanvas.MouseLeave += MainCanvas_MouseLeftButtonUp;
+            SnapToGridChk.IsEnabled = false;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -799,6 +811,11 @@ namespace SMT
                 MainCanvas.Children.Clear();
 
                 // re-add the static content
+                if(m_IsLayoutEditMode)
+                {
+                    AddSystemsToMapLayoutOnly();
+                    return;
+                }
                 AddSystemsToMap();
             }
             else
@@ -848,6 +865,180 @@ namespace SMT
             AddPOIsToMap();
         }
 
+        private void AddSystemsToMapLayoutOnly()
+        {
+            Brush SysOutlineBrush = new SolidColorBrush(MapConf.ActiveColourScheme.SystemOutlineColour);
+            Brush SysInRegionBrush = new SolidColorBrush(MapConf.ActiveColourScheme.InRegionSystemColour);
+            Brush SysOutRegionBrush = new SolidColorBrush(MapConf.ActiveColourScheme.OutRegionSystemColour);
+            Brush SysTextBrush = new SolidColorBrush(MapConf.ActiveColourScheme.InRegionSystemTextColour);
+            Brush LinkBrush = new SolidColorBrush(MapConf.ActiveColourScheme.NormalGateColour);
+
+            AddLayoutGrid();
+
+            HashSet<long> linkSet = new HashSet<long>();
+            Dictionary<string, int> index = new Dictionary<string, int>(Region.MapSystems.Count, StringComparer.Ordinal);
+            int idx = 0;
+            foreach(string name in Region.MapSystems.Keys)
+            {
+                index[name] = idx++;
+            }
+
+            foreach(KeyValuePair<string, EVEData.MapSystem> kvp in Region.MapSystems)
+            {
+                EVEData.MapSystem mapSystem = kvp.Value;
+                EVEData.System sys = mapSystem.ActualSystem;
+                if(sys == null)
+                {
+                    continue;
+                }
+
+                foreach(string jump in sys.Jumps)
+                {
+                    if(!Region.MapSystems.ContainsKey(jump))
+                    {
+                        continue;
+                    }
+
+                    int a = index[mapSystem.Name];
+                    int b = index[jump];
+                    int min = Math.Min(a, b);
+                    int max = Math.Max(a, b);
+                    long key = ((long)min << 32) | (uint)max;
+
+                    if(!linkSet.Add(key))
+                    {
+                        continue;
+                    }
+
+                    EVEData.MapSystem other = Region.MapSystems[jump];
+                    Line link = new Line
+                    {
+                        X1 = mapSystem.Layout.X,
+                        Y1 = mapSystem.Layout.Y,
+                        X2 = other.Layout.X,
+                        Y2 = other.Layout.Y,
+                        Stroke = LinkBrush,
+                        StrokeThickness = 1.0
+                    };
+
+                    Canvas.SetZIndex(link, ZINDEX_POLY);
+                    MainCanvas.Children.Add(link);
+                }
+            }
+
+            foreach(KeyValuePair<string, EVEData.MapSystem> kvp in Region.MapSystems)
+            {
+                EVEData.MapSystem mapSystem = kvp.Value;
+                bool isSystemOOR = mapSystem.OutOfRegion;
+
+                Ellipse systemShape = new Ellipse
+                {
+                    Width = SYSTEM_SHAPE_SIZE,
+                    Height = SYSTEM_SHAPE_SIZE,
+                    Fill = isSystemOOR ? SysOutRegionBrush : SysInRegionBrush,
+                    Stroke = SysOutlineBrush,
+                    StrokeThickness = 1.0
+                };
+
+                systemShape.DataContext = mapSystem;
+                systemShape.MouseDown += ShapeMouseDownHandler;
+                systemShape.MouseEnter += ShapeMouseOverHandler;
+                systemShape.MouseLeave += ShapeMouseOverHandler;
+                if(m_IsLayoutEditMode)
+                {
+                    systemShape.Cursor = Cursors.SizeAll;
+                }
+
+                Canvas.SetLeft(systemShape, mapSystem.Layout.X - SYSTEM_SHAPE_OFFSET);
+                Canvas.SetTop(systemShape, mapSystem.Layout.Y - SYSTEM_SHAPE_OFFSET);
+                Canvas.SetZIndex(systemShape, ZINDEX_SYSTEM_OUTLINE);
+                MainCanvas.Children.Add(systemShape);
+
+                TextBlock name = new TextBlock
+                {
+                    Text = mapSystem.Name,
+                    Foreground = SysTextBrush,
+                    FontSize = 10,
+                    IsHitTestVisible = false
+                };
+
+                Canvas.SetLeft(name, mapSystem.Layout.X + SYSTEM_SHAPE_OFFSET + 2);
+                Canvas.SetTop(name, mapSystem.Layout.Y - SYSTEM_SHAPE_OFFSET - 2);
+                Canvas.SetZIndex(name, ZINDEX_TEXT);
+                MainCanvas.Children.Add(name);
+            }
+        }
+
+        private void AddLayoutGrid()
+        {
+            if(!m_IsLayoutEditMode)
+            {
+                return;
+            }
+
+            double minX = double.MaxValue;
+            double minY = double.MaxValue;
+            double maxX = double.MinValue;
+            double maxY = double.MinValue;
+
+            foreach(EVEData.MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms.Layout.X < minX) minX = ms.Layout.X;
+                if(ms.Layout.Y < minY) minY = ms.Layout.Y;
+                if(ms.Layout.X > maxX) maxX = ms.Layout.X;
+                if(ms.Layout.Y > maxY) maxY = ms.Layout.Y;
+            }
+
+            if(double.IsInfinity(minX) || double.IsInfinity(minY))
+            {
+                return;
+            }
+
+            double margin = 100;
+            minX -= margin;
+            minY -= margin;
+            maxX += margin;
+            maxY += margin;
+
+            SolidColorBrush gridBrush = new SolidColorBrush(Color.FromArgb(40, 255, 255, 255));
+            gridBrush.Freeze();
+
+            double startX = Math.Floor(minX / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+            double endX = Math.Ceiling(maxX / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+            double startY = Math.Floor(minY / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+            double endY = Math.Ceiling(maxY / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+
+            for(double x = startX; x <= endX; x += LAYOUT_GRID_SIZE)
+            {
+                Line l = new Line
+                {
+                    X1 = x,
+                    Y1 = startY,
+                    X2 = x,
+                    Y2 = endY,
+                    Stroke = gridBrush,
+                    StrokeThickness = 1
+                };
+                Canvas.SetZIndex(l, ZINDEX_POLY - 1);
+                MainCanvas.Children.Add(l);
+            }
+
+            for(double y = startY; y <= endY; y += LAYOUT_GRID_SIZE)
+            {
+                Line l = new Line
+                {
+                    X1 = startX,
+                    Y1 = y,
+                    X2 = endX,
+                    Y2 = y,
+                    Stroke = gridBrush,
+                    StrokeThickness = 1
+                };
+                Canvas.SetZIndex(l, ZINDEX_POLY - 1);
+                MainCanvas.Children.Add(l);
+            }
+        }
+
         /// <summary>
         /// Select A Region
         /// </summary>
@@ -881,6 +1072,16 @@ namespace SMT
             Region = mr;
             RegionNameLabel.Content = mr.Name;
             MapConf.DefaultRegion = mr.Name;
+            if(m_IsLayoutEditMode && mr.Name != "Wicked Creek Area")
+            {
+                m_IsLayoutEditMode = false;
+                LayoutEditToggle.IsChecked = false;
+                SaveLayoutBtn.IsEnabled = false;
+                AutoLayoutBtn.IsEnabled = false;
+                SnapToGridChk.IsEnabled = false;
+                m_DragSystem = null;
+                MainCanvas.ReleaseMouseCapture();
+            }
 
             List<EVEData.MapSystem> newList = Region.MapSystems.Values.ToList().OrderBy(o => o.Name).ToList();
             SystemDropDownAC.ItemsSource = newList;
@@ -2363,6 +2564,10 @@ namespace SMT
                     SystemOutline.MouseDown += ShapeMouseDownHandler;
                     SystemOutline.MouseEnter += ShapeMouseOverHandler;
                     SystemOutline.MouseLeave += ShapeMouseOverHandler;
+                    if(m_IsLayoutEditMode)
+                    {
+                        SystemOutline.Cursor = Cursors.SizeAll;
+                    }
 
                     Canvas.SetLeft(SystemOutline, mapSystem.Layout.X - shapeOffset);
                     Canvas.SetTop(SystemOutline, mapSystem.Layout.Y - shapeOffset);
@@ -3167,6 +3372,25 @@ namespace SMT
             Shape obj = sender as Shape;
 
             EVEData.MapSystem selectedSys = obj.DataContext as EVEData.MapSystem;
+            if(selectedSys == null)
+            {
+                return;
+            }
+
+            if(m_IsLayoutEditMode)
+            {
+                if(e.ChangedButton == MouseButton.Left && e.ClickCount == 1)
+                {
+                    BeginLayoutDrag(selectedSys, e);
+                    e.Handled = true;
+                    return;
+                }
+
+                if(e.ChangedButton == MouseButton.Right)
+                {
+                    return;
+                }
+            }
 
             if(e.ChangedButton == MouseButton.Left)
             {
@@ -3296,6 +3520,122 @@ namespace SMT
 
                 cm.IsOpen = true;
             }
+        }
+
+        private void BeginLayoutDrag(EVEData.MapSystem sys, MouseButtonEventArgs e)
+        {
+            m_DragSystem = sys;
+            m_DragStartPoint = e.GetPosition(MainCanvas);
+            m_DragStartLayout = sys.Layout;
+            m_LastLayoutRedraw = DateTime.UtcNow;
+            MainCanvas.CaptureMouse();
+        }
+
+        private void MainCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            if(!m_IsLayoutEditMode || m_DragSystem == null)
+            {
+                return;
+            }
+
+            Point p = e.GetPosition(MainCanvas);
+            Vector2 delta = new Vector2((float)(p.X - m_DragStartPoint.X), (float)(p.Y - m_DragStartPoint.Y));
+            float newX = m_DragStartLayout.X + delta.X;
+            float newY = m_DragStartLayout.Y + delta.Y;
+            if(m_SnapToGrid)
+            {
+                newX = (float)Math.Round(newX / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+                newY = (float)Math.Round(newY / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+            }
+            m_DragSystem.Layout = new Vector2(newX, newY);
+
+            if((DateTime.UtcNow - m_LastLayoutRedraw).TotalMilliseconds >= LAYOUT_REDRAW_MS)
+            {
+                ReDrawMap(true);
+                m_LastLayoutRedraw = DateTime.UtcNow;
+            }
+        }
+
+        private void MainCanvas_MouseLeftButtonUp(object sender, MouseEventArgs e)
+        {
+            if(m_DragSystem == null)
+            {
+                return;
+            }
+
+            m_DragSystem = null;
+            MainCanvas.ReleaseMouseCapture();
+            ReDrawMap(true);
+        }
+
+        private void LayoutEditToggle_Checked(object sender, RoutedEventArgs e)
+        {
+            if(Region == null || Region.Name != "Wicked Creek Area")
+            {
+                MessageBox.Show("Layout editing is only enabled for Wicked Creek Area.", "Layout Edit", MessageBoxButton.OK, MessageBoxImage.Information);
+                LayoutEditToggle.IsChecked = false;
+                return;
+            }
+
+            m_IsLayoutEditMode = true;
+            SaveLayoutBtn.IsEnabled = true;
+            AutoLayoutBtn.IsEnabled = true;
+            SnapToGridChk.IsEnabled = true;
+            ReDrawMap(true);
+        }
+
+        private void LayoutEditToggle_Unchecked(object sender, RoutedEventArgs e)
+        {
+            m_IsLayoutEditMode = false;
+            SaveLayoutBtn.IsEnabled = false;
+            AutoLayoutBtn.IsEnabled = false;
+            m_DragSystem = null;
+            MainCanvas.ReleaseMouseCapture();
+            ReDrawMap(true);
+        }
+
+        private void SaveLayoutBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if(Region == null || EM == null)
+            {
+                return;
+            }
+
+            if(Region.Name != "Wicked Creek Area")
+            {
+                MessageBox.Show("This save action is only intended for Wicked Creek Area.", "Layout Save", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            EM.SaveRegionLayoutOverrides(Region.Name);
+            MessageBox.Show("Layout overrides saved. These will re-apply after data regeneration.", "Layout Save", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void AutoLayoutBtn_Click(object sender, RoutedEventArgs e)
+        {
+            if(Region == null || EM == null)
+            {
+                return;
+            }
+
+            if(Region.Name != "Wicked Creek Area")
+            {
+                MessageBox.Show("Auto arrange is only enabled for Wicked Creek Area.", "Layout Auto Arrange", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            EM.AutoArrangeRegionLayout(Region.Name);
+            ReDrawMap(true);
+        }
+
+        private void SnapToGridChk_Checked(object sender, RoutedEventArgs e)
+        {
+            m_SnapToGrid = true;
+        }
+
+        private void SnapToGridChk_Unchecked(object sender, RoutedEventArgs e)
+        {
+            m_SnapToGrid = false;
         }
 
         private void characterRightClickClearWarning(object sender, RoutedEventArgs e)

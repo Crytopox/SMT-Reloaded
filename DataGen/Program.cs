@@ -12,22 +12,37 @@ namespace DataGen
             Console.WriteLine("Creating SMT Data");
 
             // Initialise the Main Mananger
+            Console.WriteLine("Initializing EveManager...");
             EM = new(SMT.EVEData.EveAppConfig.SMT_VERSION);
             EveManager.Instance = EM;
             string inputDataFolder = AppDomain.CurrentDomain.BaseDirectory + @"..\..\..\..\..\EVEData\";
             string outputDataFolder = AppDomain.CurrentDomain.BaseDirectory + @"..\..\..\..\..\EVEData\";
 
             // Re-Create data
+            Console.WriteLine($"Input data folder: {inputDataFolder}");
+            Console.WriteLine($"Output data folder: {outputDataFolder}");
+            Console.WriteLine("Running CreateFromScratch...");
             EM.CreateFromScratch(inputDataFolder, outputDataFolder);
+            Console.WriteLine("CreateFromScratch complete.");
 
             // now save off custom SVG's for debug purposes
+            Console.WriteLine("Writing debug SVGs...");
             WriteDebugSVGs(outputDataFolder);
+            Console.WriteLine("Debug SVGs complete.");
+            Console.WriteLine("DataGen finished.");
         }
 
         private static void WriteDebugSVGs(string outputFolder)
         {
+            string exportedFolder = Path.Combine(outputFolder, "data", "SourceMaps", "exported");
+            Directory.CreateDirectory(exportedFolder);
+
+            int regionIndex = 0;
+            int regionCount = EM.Regions.Count;
             foreach(MapRegion mr in EM.Regions)
             {
+                regionIndex++;
+                Console.WriteLine($"Exporting region SVG {regionIndex}/{regionCount}: {mr.Name}");
                 SvgNet.Elements.SvgSvgElement svgRootElement = new SvgNet.Elements.SvgSvgElement(1050, 800);
 
                 Dictionary<string, SvgNet.Elements.SvgRectElement> systemElementMap = new Dictionary<string, SvgNet.Elements.SvgRectElement>();
@@ -75,7 +90,7 @@ namespace DataGen
                 }
 
                 string svgStr = svgRootElement.WriteSVGString(false);
-                string filePath = $"{outputFolder}/data/SourceMaps/exported/{mr.DotLanRef}_layout.svg";
+                string filePath = Path.Combine(exportedFolder, $"{mr.DotLanRef}_layout.svg");
                 using(StreamWriter outputFile = new StreamWriter(filePath))
                 {
                     outputFile.WriteLine(svgStr);
@@ -84,6 +99,7 @@ namespace DataGen
 
             // write a region map :
             {
+                Console.WriteLine("Exporting region layout SVG...");
                 SvgNet.Elements.SvgSvgElement svgRootElement = new SvgNet.Elements.SvgSvgElement(2100, 1600);
 
                 foreach(MapRegion mr in EM.Regions)
@@ -99,7 +115,7 @@ namespace DataGen
                 }
 
                 string svgStr = svgRootElement.WriteSVGString(false);
-                string filePath = $"{outputFolder}/data/SourceMaps/exported/region_layout.svg";
+                string filePath = Path.Combine(exportedFolder, "region_layout.svg");
                 using(StreamWriter outputFile = new StreamWriter(filePath))
                 {
                     outputFile.WriteLine(svgStr);
