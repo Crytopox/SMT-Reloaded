@@ -1359,8 +1359,13 @@ namespace SMT
             ToolBox_ShowJumpBridges = true;
             ToolBox_ShowSovOwner = true;
 
-            
+            #if DEBUG
+            Debug_EnableMapEdit = true;
+            #else
+            Debug_EnableMapEdit = false;
+            #endif
 
+            
         }
 
         protected void OnPropertyChanged(string name)

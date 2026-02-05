@@ -148,6 +148,12 @@ namespace SMT
                 MapConf.SetDefaultColours();
             }
 
+#if DEBUG
+            MapConf.Debug_EnableMapEdit = true;
+#else
+            MapConf.Debug_EnableMapEdit = false;
+#endif
+
             if(MapConf.AlwaysOnTop)
             {
                 this.Topmost = true;
