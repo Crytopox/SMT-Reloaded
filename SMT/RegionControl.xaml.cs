@@ -104,6 +104,15 @@ namespace SMT
         private MapSystem m_DragSystem;
         private Point m_DragStartPoint;
         private Vector2 m_DragStartLayout;
+        private MapSystem m_DragAnchor;
+        private Dictionary<string, Vector2> m_DragStartLayouts = new Dictionary<string, Vector2>(StringComparer.Ordinal);
+        private HashSet<MapSystem> m_SelectedSystems = new HashSet<MapSystem>();
+        private bool m_IsSelecting;
+        private bool m_SelectAdditive;
+        private bool m_SelectHasDrag;
+        private Point m_SelectStartPoint;
+        private Rectangle m_SelectRect;
+        private const double SELECT_DRAG_THRESHOLD = 4.0;
         private DateTime m_LastLayoutRedraw;
         private const int LAYOUT_REDRAW_MS = 50;
         private const int LAYOUT_GRID_SIZE = 25;
@@ -192,8 +201,12 @@ namespace SMT
 
             helpIcon.MouseLeftButtonDown += HelpIcon_MouseLeftButtonDown;
             MainCanvas.MouseMove += MainCanvas_MouseMove;
+            MainCanvas.MouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
             MainCanvas.MouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
             MainCanvas.MouseLeave += MainCanvas_MouseLeftButtonUp;
+            MainCanvasGrid.PreviewMouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
+            MainCanvasGrid.PreviewMouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
+            MainCanvasGrid.PreviewMouseMove += MainCanvas_MouseMove;
             SnapToGridChk.IsEnabled = false;
         }
 
@@ -954,6 +967,23 @@ namespace SMT
                 Canvas.SetZIndex(systemShape, ZINDEX_SYSTEM_OUTLINE);
                 MainCanvas.Children.Add(systemShape);
 
+                if(m_SelectedSystems.Contains(mapSystem))
+                {
+                    Ellipse sel = new Ellipse
+                    {
+                        Width = SYSTEM_SHAPE_SIZE + 8,
+                        Height = SYSTEM_SHAPE_SIZE + 8,
+                        Stroke = new SolidColorBrush(Colors.Gold),
+                        StrokeThickness = 2.0,
+                        Fill = Brushes.Transparent,
+                        IsHitTestVisible = false
+                    };
+                    Canvas.SetLeft(sel, mapSystem.Layout.X - SYSTEM_SHAPE_OFFSET - 4);
+                    Canvas.SetTop(sel, mapSystem.Layout.Y - SYSTEM_SHAPE_OFFSET - 4);
+                    Canvas.SetZIndex(sel, ZINDEX_SYSTEM_OUTLINE + 1);
+                    MainCanvas.Children.Add(sel);
+                }
+
                 TextBlock name = new TextBlock
                 {
                     Text = mapSystem.Name,
@@ -966,6 +996,11 @@ namespace SMT
                 Canvas.SetTop(name, mapSystem.Layout.Y - SYSTEM_SHAPE_OFFSET - 2);
                 Canvas.SetZIndex(name, ZINDEX_TEXT);
                 MainCanvas.Children.Add(name);
+            }
+
+            if(m_IsSelecting && m_SelectHasDrag)
+            {
+                AddSelectionOverlayIfNeeded();
             }
         }
 
@@ -1017,7 +1052,8 @@ namespace SMT
                     X2 = x,
                     Y2 = endY,
                     Stroke = gridBrush,
-                    StrokeThickness = 1
+                    StrokeThickness = 1,
+                    IsHitTestVisible = false
                 };
                 Canvas.SetZIndex(l, ZINDEX_POLY - 1);
                 MainCanvas.Children.Add(l);
@@ -1032,7 +1068,8 @@ namespace SMT
                     X2 = endX,
                     Y2 = y,
                     Stroke = gridBrush,
-                    StrokeThickness = 1
+                    StrokeThickness = 1,
+                    IsHitTestVisible = false
                 };
                 Canvas.SetZIndex(l, ZINDEX_POLY - 1);
                 MainCanvas.Children.Add(l);
@@ -1079,6 +1116,8 @@ namespace SMT
                 SaveLayoutBtn.IsEnabled = false;
                 AutoLayoutBtn.IsEnabled = false;
                 SnapToGridChk.IsEnabled = false;
+                m_SelectedSystems.Clear();
+                m_IsSelecting = false;
                 m_DragSystem = null;
                 MainCanvas.ReleaseMouseCapture();
             }
@@ -3381,6 +3420,22 @@ namespace SMT
             {
                 if(e.ChangedButton == MouseButton.Left && e.ClickCount == 1)
                 {
+                    bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+                    if(ctrl)
+                    {
+                        ToggleLayoutSelection(selectedSys);
+                        ReDrawMap(true);
+                        e.Handled = true;
+                        return;
+                    }
+
+                    if(!m_SelectedSystems.Contains(selectedSys))
+                    {
+                        m_SelectedSystems.Clear();
+                        m_SelectedSystems.Add(selectedSys);
+                        ReDrawMap(true);
+                    }
+
                     BeginLayoutDrag(selectedSys, e);
                     e.Handled = true;
                     return;
@@ -3522,19 +3577,184 @@ namespace SMT
             }
         }
 
+        private void MainCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if(!m_IsLayoutEditMode)
+            {
+                return;
+            }
+
+            if(e.Handled)
+            {
+                return;
+            }
+
+            if(Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl))
+            {
+                // allow additive selection on empty space
+            }
+
+            if(GetMapSystemFromEventSource(e.OriginalSource) == null)
+            {
+                if(!(Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl)))
+                {
+                    m_SelectedSystems.Clear();
+                }
+
+                BeginBoxSelection(e);
+                e.Handled = true;
+            }
+        }
+
+        private void ToggleLayoutSelection(EVEData.MapSystem sys)
+        {
+            if(m_SelectedSystems.Contains(sys))
+            {
+                m_SelectedSystems.Remove(sys);
+            }
+            else
+            {
+                m_SelectedSystems.Add(sys);
+            }
+        }
+
+        private void BeginBoxSelection(MouseButtonEventArgs e)
+        {
+            m_IsSelecting = true;
+            m_SelectAdditive = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            m_SelectStartPoint = e.GetPosition(MainCanvas);
+            m_SelectHasDrag = false;
+            if(m_SelectRect == null)
+            {
+                m_SelectRect = new Rectangle
+                {
+                    Stroke = new SolidColorBrush(Color.FromArgb(160, 255, 215, 0)),
+                    StrokeThickness = 1,
+                    Fill = new SolidColorBrush(Color.FromArgb(40, 255, 215, 0)),
+                    IsHitTestVisible = false
+                };
+            }
+            MainCanvas.CaptureMouse();
+        }
+
+        private void UpdateSelectionRectangle(Point a, Point b)
+        {
+            double x = Math.Min(a.X, b.X);
+            double y = Math.Min(a.Y, b.Y);
+            double w = Math.Abs(a.X - b.X);
+            double h = Math.Abs(a.Y - b.Y);
+            Canvas.SetLeft(m_SelectRect, x);
+            Canvas.SetTop(m_SelectRect, y);
+            m_SelectRect.Width = w;
+            m_SelectRect.Height = h;
+        }
+
+        private void EndBoxSelection(Point endPoint)
+        {
+            if(m_SelectRect != null && MainCanvas.Children.Contains(m_SelectRect))
+            {
+                MainCanvas.Children.Remove(m_SelectRect);
+            }
+
+            if(m_SelectHasDrag)
+            {
+                Rect r = new Rect(
+                    Math.Min(m_SelectStartPoint.X, endPoint.X),
+                    Math.Min(m_SelectStartPoint.Y, endPoint.Y),
+                    Math.Abs(m_SelectStartPoint.X - endPoint.X),
+                    Math.Abs(m_SelectStartPoint.Y - endPoint.Y));
+
+                if(!m_SelectAdditive)
+                {
+                    m_SelectedSystems.Clear();
+                }
+
+                foreach(MapSystem ms in Region.MapSystems.Values)
+                {
+                    if(r.Contains(ms.Layout.X, ms.Layout.Y))
+                    {
+                        m_SelectedSystems.Add(ms);
+                    }
+                }
+            }
+
+            m_IsSelecting = false;
+            MainCanvas.ReleaseMouseCapture();
+            ReDrawMap(true);
+        }
+
+        private void AddSelectionOverlayIfNeeded()
+        {
+            if(m_SelectRect == null)
+            {
+                return;
+            }
+
+            if(!MainCanvas.Children.Contains(m_SelectRect))
+            {
+                MainCanvas.Children.Add(m_SelectRect);
+            }
+            Canvas.SetZIndex(m_SelectRect, ZINDEX_TEXT + 5);
+        }
+
+        private EVEData.MapSystem GetMapSystemFromEventSource(object source)
+        {
+            if(source is DependencyObject dep)
+            {
+                DependencyObject current = dep;
+                while(current != null)
+                {
+                    if(current is Shape s && s.DataContext is EVEData.MapSystem ms)
+                    {
+                        return ms;
+                    }
+                    current = VisualTreeHelper.GetParent(current);
+                }
+            }
+            return null;
+        }
+
         private void BeginLayoutDrag(EVEData.MapSystem sys, MouseButtonEventArgs e)
         {
             m_DragSystem = sys;
+            m_DragAnchor = sys;
             m_DragStartPoint = e.GetPosition(MainCanvas);
             m_DragStartLayout = sys.Layout;
+            m_DragStartLayouts.Clear();
+            IEnumerable<MapSystem> targets = m_SelectedSystems.Count > 0 ? m_SelectedSystems : new[] { sys };
+            foreach(MapSystem ms in targets)
+            {
+                m_DragStartLayouts[ms.Name] = ms.Layout;
+            }
             m_LastLayoutRedraw = DateTime.UtcNow;
             MainCanvas.CaptureMouse();
         }
 
         private void MainCanvas_MouseMove(object sender, MouseEventArgs e)
         {
+            if(e.Handled)
+            {
+                return;
+            }
             if(!m_IsLayoutEditMode || m_DragSystem == null)
             {
+                if(m_IsLayoutEditMode && m_IsSelecting)
+                {
+                    Point point = e.GetPosition(MainCanvas);
+                    if(!m_SelectHasDrag)
+                    {
+                        if(Math.Abs(point.X - m_SelectStartPoint.X) >= SELECT_DRAG_THRESHOLD ||
+                           Math.Abs(point.Y - m_SelectStartPoint.Y) >= SELECT_DRAG_THRESHOLD)
+                        {
+                            m_SelectHasDrag = true;
+                            AddSelectionOverlayIfNeeded();
+                        }
+                    }
+                    if(m_SelectHasDrag)
+                    {
+                        UpdateSelectionRectangle(m_SelectStartPoint, point);
+                    }
+                }
                 return;
             }
 
@@ -3547,7 +3767,15 @@ namespace SMT
                 newX = (float)Math.Round(newX / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
                 newY = (float)Math.Round(newY / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
             }
-            m_DragSystem.Layout = new Vector2(newX, newY);
+            Vector2 anchorDelta = new Vector2(newX - m_DragStartLayout.X, newY - m_DragStartLayout.Y);
+
+            foreach(KeyValuePair<string, Vector2> kvp in m_DragStartLayouts)
+            {
+                if(Region.MapSystems.ContainsKey(kvp.Key))
+                {
+                    Region.MapSystems[kvp.Key].Layout = kvp.Value + anchorDelta;
+                }
+            }
 
             if((DateTime.UtcNow - m_LastLayoutRedraw).TotalMilliseconds >= LAYOUT_REDRAW_MS)
             {
@@ -3558,12 +3786,21 @@ namespace SMT
 
         private void MainCanvas_MouseLeftButtonUp(object sender, MouseEventArgs e)
         {
+            if(m_IsSelecting)
+            {
+                Point p = e.GetPosition(MainCanvas);
+                EndBoxSelection(p);
+                return;
+            }
+
             if(m_DragSystem == null)
             {
                 return;
             }
 
             m_DragSystem = null;
+            m_DragAnchor = null;
+            m_DragStartLayouts.Clear();
             MainCanvas.ReleaseMouseCapture();
             ReDrawMap(true);
         }
@@ -3624,7 +3861,13 @@ namespace SMT
                 return;
             }
 
-            EM.AutoArrangeRegionLayout(Region.Name);
+            float strength = 1.2f;
+            if(AutoLayoutStrengthSlider != null)
+            {
+                strength = (float)AutoLayoutStrengthSlider.Value;
+            }
+
+            EM.AutoArrangeRegionLayout(Region.Name, 240, strength);
             ReDrawMap(true);
         }
 

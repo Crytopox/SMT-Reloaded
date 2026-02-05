@@ -2041,7 +2041,7 @@ namespace SMT.EVEData
             Serialization.SerializeToDisk<RegionLayoutOverrides>(overrides, overrideFile);
         }
 
-        public void AutoArrangeRegionLayout(string regionName, int iterations = 180)
+        public void AutoArrangeRegionLayout(string regionName, int iterations = 260, float strength = 1.2f)
         {
             MapRegion region = GetRegion(regionName);
             if(region == null)
@@ -2049,7 +2049,7 @@ namespace SMT.EVEData
                 return;
             }
 
-            OptimizeRegionLayout(region, iterations, 42.0f);
+            OptimizeRegionLayout(region, iterations, 80.0f, strength);
             RebuildRegionVoronoiCells(region);
         }
 
@@ -2111,7 +2111,7 @@ namespace SMT.EVEData
             return new string(buffer);
         }
 
-        private static void OptimizeRegionLayout(MapRegion mr, int iterations, float minSpacing)
+        private static void OptimizeRegionLayout(MapRegion mr, int iterations, float minSpacing, float strength)
         {
             List<MapSystem> systems = mr.MapSystems.Values.ToList();
             int n = systems.Count;
@@ -2128,6 +2128,7 @@ namespace SMT.EVEData
 
             HashSet<long> edgeSet = new HashSet<long>();
             List<(int a, int b)> edges = new List<(int a, int b)>();
+            int[] degree = new int[n];
 
             foreach(MapSystem ms in systems)
             {
@@ -2157,6 +2158,8 @@ namespace SMT.EVEData
                     if(edgeSet.Add(key))
                     {
                         edges.Add((min, max));
+                        degree[min]++;
+                        degree[max]++;
                     }
                 }
             }
@@ -2193,6 +2196,7 @@ namespace SMT.EVEData
 
             float area = width * height;
             float k = (float)Math.Sqrt(area / n);
+            float strengthClamp = Math.Clamp(strength, 0.5f, 3.0f);
             float t0 = Math.Min(width, height) / 4.0f;
 
             for(int iter = 0; iter < iterations; iter++)
@@ -2214,7 +2218,8 @@ namespace SMT.EVEData
                             dist = delta.Length();
                         }
 
-                        float force = (k * k) / dist;
+                        float dScale = 1.0f + (degree[i] + degree[j]) * 0.06f;
+                        float force = ((k * k) / dist) * dScale * strengthClamp;
                         Vector2 dir = delta / dist;
                         Vector2 repulse = dir * force;
                         disp[i] += repulse;
@@ -2252,7 +2257,7 @@ namespace SMT.EVEData
             }
 
             // enforce a minimum spacing to break up dense clusters
-            for(int pass = 0; pass < 10; pass++)
+            for(int pass = 0; pass < 25; pass++)
             {
                 bool moved = false;
                 for(int i = 0; i < n; i++)
@@ -2267,7 +2272,9 @@ namespace SMT.EVEData
                             dist = delta.Length();
                         }
 
-                        float s = minSpacing - dist;
+                        float degreeBoost = 1.0f + Math.Min(8, degree[i] + degree[j]) * 0.05f;
+                        float targetSpacing = minSpacing * degreeBoost;
+                        float s = targetSpacing - dist;
                         if(s > 0)
                         {
                             Vector2 dir = delta / dist;
