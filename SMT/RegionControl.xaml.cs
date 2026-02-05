@@ -200,13 +200,10 @@ namespace SMT
             stormImageTherm = ResourceLoader.LoadBitmapFromResource("Images/cloud_thermal.png");
 
             helpIcon.MouseLeftButtonDown += HelpIcon_MouseLeftButtonDown;
-            MainCanvas.MouseMove += MainCanvas_MouseMove;
-            MainCanvas.MouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
-            MainCanvas.MouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
-            MainCanvas.MouseLeave += MainCanvas_MouseLeftButtonUp;
-            MainCanvasGrid.PreviewMouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
-            MainCanvasGrid.PreviewMouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
-            MainCanvasGrid.PreviewMouseMove += MainCanvas_MouseMove;
+            MainZoomControl.PreviewMouseMove += MainCanvas_MouseMove;
+            MainZoomControl.PreviewMouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
+            MainZoomControl.PreviewMouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
+            MainZoomControl.MouseLeave += MainCanvas_MouseLeftButtonUp;
             SnapToGridChk.IsEnabled = false;
         }
 
@@ -3567,17 +3564,19 @@ namespace SMT
                 return;
             }
 
-            bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
-            if(!ctrl)
+            if(IsDescendantOf(e.OriginalSource as DependencyObject, ToolBoxCanvas))
             {
                 return;
             }
 
-            Point canvasPoint = GetCanvasPoint(e);
-            EVEData.MapSystem hit = TryGetMapSystemAtPoint(canvasPoint);
+            EVEData.MapSystem hit = TryGetMapSystemUnderCursor(e);
+
+            bool ctrl = Keyboard.IsKeyDown(Key.LeftCtrl) || Keyboard.IsKeyDown(Key.RightCtrl);
+            bool shift = Keyboard.IsKeyDown(Key.LeftShift) || Keyboard.IsKeyDown(Key.RightShift);
+
             if(hit != null)
             {
-                if(!m_SelectedSystems.Contains(hit))
+                if(ctrl)
                 {
                     ToggleLayoutSelection(hit);
                     ReDrawMap(true);
@@ -3585,14 +3584,56 @@ namespace SMT
                     return;
                 }
 
+                if(!m_SelectedSystems.Contains(hit))
+                {
+                    m_SelectedSystems.Clear();
+                    m_SelectedSystems.Add(hit);
+                    ReDrawMap(true);
+                }
+
                 BeginLayoutDrag(hit, e);
                 e.Handled = true;
                 return;
             }
 
-            m_SelectedSystems.Clear();
-            BeginBoxSelection(e);
-            e.Handled = true;
+            if(shift)
+            {
+                m_SelectedSystems.Clear();
+                BeginBoxSelection(e);
+                e.Handled = true;
+                return;
+            }
+
+            if(m_SelectedSystems.Count > 0)
+            {
+                m_SelectedSystems.Clear();
+                ReDrawMap(true);
+                e.Handled = true;
+            }
+        }
+
+        private void MainCanvas_MouseRightButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if(!m_IsLayoutEditMode)
+            {
+                return;
+            }
+
+            return;
+        }
+
+        private void MainCanvas_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            if(m_DragSystem == null)
+            {
+                return;
+            }
+
+            m_DragSystem = null;
+            m_DragAnchor = null;
+            m_DragStartLayouts.Clear();
+            MainCanvas.ReleaseMouseCapture();
+            ReDrawMap(true);
         }
 
         private void ToggleLayoutSelection(EVEData.MapSystem sys)
@@ -3729,11 +3770,47 @@ namespace SMT
             return null;
         }
 
+        private EVEData.MapSystem TryGetMapSystemUnderCursor(MouseEventArgs e)
+        {
+            if(MainZoomControl == null)
+            {
+                return null;
+            }
+
+            IInputElement hit = MainZoomControl.InputHitTest(e.GetPosition(MainZoomControl));
+            if(hit is DependencyObject dep)
+            {
+                DependencyObject current = dep;
+                while(current != null)
+                {
+                    if(current is Shape s && s.DataContext is EVEData.MapSystem ms)
+                    {
+                        return ms;
+                    }
+                    current = VisualTreeHelper.GetParent(current);
+                }
+            }
+
+            return null;
+        }
+
         private Point GetCanvasPoint(MouseEventArgs e)
         {
             Point p = e.GetPosition(MainZoomControl);
-            GeneralTransform transform = MainZoomControl.TransformToVisual(MainCanvas);
-            return transform.Transform(p);
+            try
+            {
+                GeneralTransform toCanvas = MainZoomControl.TransformToDescendant(MainCanvas);
+                if(toCanvas != null)
+                {
+                    return toCanvas.Transform(p);
+                }
+            }
+            catch
+            {
+                // fall through to raw point
+            }
+
+            return e.GetPosition(MainCanvas);
         }
 
         private void BeginLayoutDrag(EVEData.MapSystem sys, MouseButtonEventArgs e)

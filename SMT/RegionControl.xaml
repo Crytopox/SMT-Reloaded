@@ -449,6 +449,10 @@
                                 <Label Content="Auto Strength" FontSize="10" Margin="0,0,4,0" />
                                 <Slider x:Name="AutoLayoutStrengthSlider" Width="90" Minimum="0.8" Maximum="2.5" Value="1.2" TickFrequency="0.1" IsSnapToTickEnabled="True" ToolTip="Auto arrange strength" />
                             </StackPanel>
+                            <TextBlock Margin="2,2,2,0" FontSize="9" Foreground="#FF9FA0A0" TextWrapping="Wrap"
+                                       Visibility="{Binding ElementName=LayoutEditToggle, Path=IsChecked, Converter={StaticResource BoolToVis}}">
+                                Click+Drag move • Ctrl+Click toggle • Shift+Drag empty = box select
+                            </TextBlock>
 
                             <Slider  Width="160" Cursor="Arrow" Margin="0,2" Value="{Binding ESIOverlayScale}" Minimum="0.1" Maximum="2" TickFrequency="0.1" VerticalAlignment="Center" HorizontalAlignment="Center" Grid.Column="1" Height="18" ToolTip="Overlay/Data Scale" IsSnapToTickEnabled="True" IsMoveToPointEnabled="True" />
                         </StackPanel>
