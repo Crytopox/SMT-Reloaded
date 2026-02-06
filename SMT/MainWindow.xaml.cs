@@ -1149,6 +1149,20 @@ namespace SMT
             }
         }
 
+        private void RegionColorLegend_MenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if(RegionUC == null || RegionUC.Region == null || !RegionUC.Region.IsCustom)
+            {
+                MessageBox.Show("Open a custom region to view its color legend.", "Region Colors", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            List<RegionControl.RegionColorItem> items = RegionUC.GetRegionColorLegend();
+            RegionColorLegendWindow win = new RegionColorLegendWindow(items);
+            win.Owner = this;
+            win.ShowDialog();
+        }
+
         private void FullScreenToggle_MenuItem_Click(object sender, RoutedEventArgs e)
         {
             if(miFullScreenToggle.IsChecked)

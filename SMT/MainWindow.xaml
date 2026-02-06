@@ -74,6 +74,8 @@
                     <Separator />
                     <MenuItem Header="Create From Current Region..." Click="CreateCustomRegion_MenuItem_Click" />
                     <MenuItem Header="Export Current Region..." Click="ExportCustomRegion_MenuItem_Click" />
+                    <Separator />
+                    <MenuItem Header="Region Color Legend..." Click="RegionColorLegend_MenuItem_Click" />
                 </MenuItem>
 
                 <MenuItem Header="View" Height="Auto">

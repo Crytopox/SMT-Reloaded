@@ -142,14 +142,51 @@
                 <StackPanel x:Name="AllianceNameListStackPanel" VerticalAlignment="Bottom" />
             </Border>
 
-            <Border BorderThickness="2" BorderBrush="Black" Background="#FF232223" Width="170" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" CornerRadius="4" Panel.ZIndex="111"  Visibility="{Binding Path=MapConf.ShowToolBox, Converter={StaticResource BoolToVis}}" Grid.ColumnSpan="3" ClipToBounds="True"
+            <Border BorderThickness="2" BorderBrush="Black" Background="#FF232223" Width="170" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,200" CornerRadius="4" Panel.ZIndex="110"
+                    Visibility="{Binding Path=ShowRegionLegend, Converter={StaticResource BoolToVis}}" Grid.ColumnSpan="3" ClipToBounds="True">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Margin" Value="0,0,10,200" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ElementName=LayoutEditToggle, Path=IsChecked}" Value="True">
+                                <Setter Property="Margin" Value="0,0,10,460" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid Margin="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Region Colors" FontWeight="Bold" Margin="0,0,0,4" Foreground="White" />
+                    <CheckBox Grid.Row="1" Content="Show Background" IsChecked="{Binding ShowRegionTint}" Margin="0,0,0,4" Foreground="White" />
+                    <ListView Grid.Row="2" ItemsSource="{Binding RegionColorLegendItems}" SelectionMode="Multiple" SelectionChanged="RegionLegendList_SelectionChanged">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="20" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Rectangle Grid.Column="0" Width="12" Height="12" Fill="{Binding Brush}" Stroke="Black" StrokeThickness="0.5" Margin="2" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" VerticalAlignment="Center" Foreground="White" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
+            <Border BorderThickness="2" BorderBrush="Black" Background="#FF232223" Width="170" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,10,10" CornerRadius="4" Panel.ZIndex="112"  Visibility="{Binding Path=MapConf.ShowToolBox, Converter={StaticResource BoolToVis}}" Grid.ColumnSpan="3" ClipToBounds="True"
                     ToolTipService.ShowDuration="60000">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Height" Value="170" />
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding ElementName=LayoutEditToggle, Path=IsChecked}" Value="True">
-                                <Setter Property="Height" Value="360" />
+                                <Setter Property="Height" Value="420" />
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

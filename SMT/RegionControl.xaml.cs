@@ -120,6 +120,15 @@ namespace SMT
         private DateTime m_LastLayoutRedraw;
         private const int LAYOUT_REDRAW_MS = 50;
         private const int LAYOUT_GRID_SIZE = 25;
+        private readonly Dictionary<string, Brush> m_RegionTintCache = new Dictionary<string, Brush>(StringComparer.Ordinal);
+        private readonly Dictionary<string, Brush> m_RegionTintStrokeCache = new Dictionary<string, Brush>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> m_RegionTintIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        private string m_RegionTintKey;
+        private bool m_ShowRegionTint = true;
+        private readonly HashSet<string> m_SelectedTintRegions = new HashSet<string>(StringComparer.Ordinal);
+        public List<RegionColorItem> RegionColorLegendItems { get; private set; } = new List<RegionColorItem>();
+        public bool ShowRegionLegend { get; private set; }
+        private bool m_PreviousShowToolBox = true;
         private Brush StandingBadBrush = new SolidColorBrush(Color.FromArgb(110, 196, 72, 6));
         private Brush StandingGoodBrush = new SolidColorBrush(Color.FromArgb(110, 43, 101, 196));
         private Brush StandingNeutBrush = new SolidColorBrush(Color.FromArgb(110, 140, 140, 140));
@@ -268,6 +277,24 @@ namespace SMT
         public EVEData.MapRegion Region { get; set; }
 
         public string SelectedSystem { get; set; }
+
+        public bool ShowRegionTint
+        {
+            get
+            {
+                return m_ShowRegionTint;
+            }
+            set
+            {
+                if(m_ShowRegionTint == value)
+                {
+                    return;
+                }
+                m_ShowRegionTint = value;
+                OnPropertyChanged("ShowRegionTint");
+                ReDrawMap(true);
+            }
+        }
 
         public bool ShowJumpBridges
         {
@@ -931,6 +958,7 @@ namespace SMT
             Brush LinkBrush = new SolidColorBrush(MapConf.ActiveColourScheme.NormalGateColour);
 
             AddLayoutGrid();
+            AddRegionTintBackground();
 
             HashSet<long> linkSet = new HashSet<long>();
             Dictionary<string, int> index = new Dictionary<string, int>(Region.MapSystems.Count, StringComparer.Ordinal);
@@ -1204,6 +1232,7 @@ namespace SMT
             Region = mr;
             RegionNameLabel.Content = mr.Name;
             MapConf.DefaultRegion = mr.Name;
+            UpdateRegionLegend();
             if(m_IsLayoutEditMode && (!mr.IsCustom || !mr.AllowEdit))
             {
                 m_IsLayoutEditMode = false;
@@ -2616,6 +2645,8 @@ namespace SMT
 
             // cache all system links
             List<GateHelper> systemLinks = new List<GateHelper>();
+
+            AddRegionTintBackground();
 
             Random rnd = new Random(4);
 
@@ -4125,6 +4156,434 @@ namespace SMT
             return false;
         }
 
+        public sealed class RegionColorItem
+        {
+            public string Name { get; set; }
+            public Brush Brush { get; set; }
+        }
+
+        public List<RegionColorItem> GetRegionColorLegend()
+        {
+            if(Region == null || !Region.IsCustom)
+            {
+                return new List<RegionColorItem>();
+            }
+
+            HashSet<string> regions = new HashSet<string>(StringComparer.Ordinal);
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                string regionName = GetSystemRegionName(ms);
+                if(!string.IsNullOrWhiteSpace(regionName))
+                {
+                    regions.Add(regionName);
+                }
+            }
+
+            List<RegionColorItem> list = new List<RegionColorItem>();
+            foreach(string name in regions.OrderBy(r => r))
+            {
+                list.Add(new RegionColorItem
+                {
+                    Name = name,
+                    Brush = GetRegionTintBrush(name)
+                });
+            }
+            return list;
+        }
+
+        private void AddRegionTintBackground()
+        {
+            if(Region == null || !Region.IsCustom || !m_ShowRegionTint)
+            {
+                return;
+            }
+
+            HashSet<string> regions = new HashSet<string>(StringComparer.Ordinal);
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                string regionName = GetSystemRegionName(ms);
+                if(!string.IsNullOrWhiteSpace(regionName))
+                {
+                    regions.Add(regionName);
+                }
+            }
+
+            if(regions.Count <= 1)
+            {
+                return;
+            }
+
+            EnsureRegionTintPalette(regions);
+
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                if(ms.CellPoints == null || ms.CellPoints.Count == 0)
+                {
+                    continue;
+                }
+
+                string regionName = GetSystemRegionName(ms);
+                Brush fill = GetRegionTintBrush(regionName);
+                if(fill == null)
+                {
+                    continue;
+                }
+
+                Polygon poly = new Polygon();
+                Vector2 centroid = GetCellCentroid(ms.CellPoints);
+                double expand = 1.0;
+                foreach(Vector2 p in ms.CellPoints)
+                {
+                    Vector2 pp = new Vector2((float)(centroid.X + (p.X - centroid.X) * expand), (float)(centroid.Y + (p.Y - centroid.Y) * expand));
+                    poly.Points.Add(new Point(pp.X, pp.Y));
+                }
+                poly.Fill = fill;
+                poly.Stroke = fill;
+                poly.StrokeThickness = 1.2;
+                poly.SnapsToDevicePixels = true;
+                poly.IsHitTestVisible = false;
+                Canvas.SetZIndex(poly, ZINDEX_POLY - 2);
+                MainCanvas.Children.Add(poly);
+
+                if(m_SelectedTintRegions.Contains(regionName))
+                {
+                    Polygon outline = new Polygon();
+                    foreach(Point pt in poly.Points)
+                    {
+                        outline.Points.Add(pt);
+                    }
+                    outline.Fill = Brushes.Transparent;
+                    outline.Stroke = GetRegionTintStrokeBrush(regionName);
+                    outline.StrokeThickness = 2.4;
+                    outline.IsHitTestVisible = false;
+                    Canvas.SetZIndex(outline, ZINDEX_POLY - 1);
+                    MainCanvas.Children.Add(outline);
+                }
+            }
+        }
+
+        private Brush GetRegionTintBrush(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName))
+            {
+                return null;
+            }
+
+            if(m_RegionTintCache.TryGetValue(regionName, out Brush cached))
+            {
+                return cached;
+            }
+
+            int hash = regionName.GetHashCode();
+            double hue = (Math.Abs(hash) % 360);
+            double saturation = 0.35;
+            double lightness = 0.78;
+
+            Color rgb = HslToRgb(hue, saturation, lightness);
+            rgb.A = 80;
+
+            SolidColorBrush brush = new SolidColorBrush(rgb);
+            brush.Freeze();
+            m_RegionTintCache[regionName] = brush;
+            return brush;
+        }
+
+        private Brush GetRegionTintStrokeBrush(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName))
+            {
+                return null;
+            }
+
+            if(m_RegionTintStrokeCache.TryGetValue(regionName, out Brush cached))
+            {
+                return cached;
+            }
+
+            int hash = regionName.GetHashCode();
+            double hue = (Math.Abs(hash) % 360);
+            double saturation = 0.38;
+            double lightness = 0.68;
+
+            Color rgb = HslToRgb(hue, saturation, lightness);
+            rgb.A = 120;
+
+            SolidColorBrush brush = new SolidColorBrush(rgb);
+            brush.Freeze();
+            m_RegionTintStrokeCache[regionName] = brush;
+            return brush;
+        }
+
+        private void UpdateRegionLegend()
+        {
+            if(Region == null || !Region.IsCustom)
+            {
+                RegionColorLegendItems = new List<RegionColorItem>();
+                ShowRegionLegend = false;
+                m_SelectedTintRegions.Clear();
+                OnPropertyChanged("RegionColorLegendItems");
+                OnPropertyChanged("ShowRegionLegend");
+                return;
+            }
+
+            HashSet<string> regions = new HashSet<string>(StringComparer.Ordinal);
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                string regionName = GetSystemRegionName(ms);
+                if(!string.IsNullOrWhiteSpace(regionName))
+                {
+                    regions.Add(regionName);
+                }
+            }
+
+            ShowRegionLegend = regions.Count > 1;
+            RegionColorLegendItems = regions
+                .OrderBy(r => r)
+                .Select(r => new RegionColorItem { Name = r, Brush = GetRegionTintBrush(r) })
+                .ToList();
+
+            OnPropertyChanged("RegionColorLegendItems");
+            OnPropertyChanged("ShowRegionLegend");
+        }
+
+        private void RegionLegendList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            m_SelectedTintRegions.Clear();
+            if(sender is ListView lv)
+            {
+                foreach(object item in lv.SelectedItems)
+                {
+                    if(item is RegionColorItem rci && !string.IsNullOrWhiteSpace(rci.Name))
+                    {
+                        m_SelectedTintRegions.Add(rci.Name);
+                    }
+                }
+            }
+            ReDrawMap(true);
+        }
+
+        private void EnsureRegionTintPalette(HashSet<string> regions)
+        {
+            if(Region == null)
+            {
+                return;
+            }
+
+            string key = Region.Name + ":" + string.Join("|", regions.OrderBy(r => r));
+            if(key == m_RegionTintKey && m_RegionTintIndex.Count == regions.Count)
+            {
+                return;
+            }
+
+            m_RegionTintKey = key;
+            m_RegionTintIndex.Clear();
+            m_RegionTintCache.Clear();
+            m_RegionTintStrokeCache.Clear();
+
+            List<Color> palette = BuildPastelPalette();
+
+            Dictionary<string, HashSet<string>> adjacency = BuildRegionAdjacency(regions);
+            List<string> ordered = regions.OrderByDescending(r => adjacency[r].Count).ToList();
+
+            foreach(string region in ordered)
+            {
+                HashSet<int> used = new HashSet<int>();
+                foreach(string neighbor in adjacency[region])
+                {
+                    if(m_RegionTintIndex.TryGetValue(neighbor, out int idx))
+                    {
+                        used.Add(idx);
+                    }
+                }
+
+                int selected = 0;
+                double bestScore = -1;
+                for(int i = 0; i < palette.Count; i++)
+                {
+                    double score = used.Contains(i) ? -1 : ColorDistanceScore(palette[i], used.Select(u => palette[u]).ToList());
+                    if(score > bestScore)
+                    {
+                        bestScore = score;
+                        selected = i;
+                    }
+                }
+
+                m_RegionTintIndex[region] = selected;
+                Color fill = palette[selected];
+                Color stroke = Darken(fill, 0.2f);
+                SolidColorBrush fillBrush = new SolidColorBrush(fill);
+                fillBrush.Freeze();
+                SolidColorBrush strokeBrush = new SolidColorBrush(stroke);
+                strokeBrush.Freeze();
+                m_RegionTintCache[region] = fillBrush;
+                m_RegionTintStrokeCache[region] = strokeBrush;
+            }
+        }
+
+        private Dictionary<string, HashSet<string>> BuildRegionAdjacency(HashSet<string> regions)
+        {
+            Dictionary<string, HashSet<string>> graph = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+            foreach(string r in regions)
+            {
+                graph[r] = new HashSet<string>(StringComparer.Ordinal);
+            }
+
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                string a = GetSystemRegionName(ms);
+                if(string.IsNullOrWhiteSpace(a) || !graph.ContainsKey(a))
+                {
+                    continue;
+                }
+
+                EVEData.System sys = ms.ActualSystem;
+                if(sys == null)
+                {
+                    continue;
+                }
+
+                foreach(string jump in sys.Jumps)
+                {
+                    if(!Region.MapSystems.ContainsKey(jump))
+                    {
+                        continue;
+                    }
+                    MapSystem other = Region.MapSystems[jump];
+                    string b = GetSystemRegionName(other);
+                    if(string.IsNullOrWhiteSpace(b) || a == b || !graph.ContainsKey(b))
+                    {
+                        continue;
+                    }
+                    graph[a].Add(b);
+                    graph[b].Add(a);
+                }
+            }
+
+            return graph;
+        }
+
+        private static List<Color> BuildPastelPalette()
+        {
+            List<double> hues = new List<double> { 0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330 };
+            List<Color> list = new List<Color>();
+            foreach(double h in hues)
+            {
+                Color c = HslToRgb(h, 0.5, 0.82);
+                c.A = 120;
+                list.Add(c);
+            }
+            return list;
+        }
+
+        private static double ColorDistanceScore(Color c, List<Color> used)
+        {
+            if(used.Count == 0)
+            {
+                return 1.0;
+            }
+
+            double min = double.MaxValue;
+            foreach(Color u in used)
+            {
+                double dr = c.R - u.R;
+                double dg = c.G - u.G;
+                double db = c.B - u.B;
+                double d = Math.Sqrt(dr * dr + dg * dg + db * db);
+                if(d < min)
+                {
+                    min = d;
+                }
+            }
+            return min;
+        }
+
+        private static Color Darken(Color c, float amount)
+        {
+            byte r = (byte)Math.Max(0, c.R * (1.0f - amount));
+            byte g = (byte)Math.Max(0, c.G * (1.0f - amount));
+            byte b = (byte)Math.Max(0, c.B * (1.0f - amount));
+            return Color.FromArgb(170, r, g, b);
+        }
+
+        private static Vector2 GetCellCentroid(List<Vector2> points)
+        {
+            if(points == null || points.Count == 0)
+            {
+                return Vector2.Zero;
+            }
+
+            float x = 0;
+            float y = 0;
+            foreach(Vector2 p in points)
+            {
+                x += p.X;
+                y += p.Y;
+            }
+            return new Vector2(x / points.Count, y / points.Count);
+        }
+
+        private string GetSystemRegionName(MapSystem ms)
+        {
+            if(ms == null)
+            {
+                return string.Empty;
+            }
+
+            if(ms.ActualSystem != null && !string.IsNullOrWhiteSpace(ms.ActualSystem.Region))
+            {
+                return ms.ActualSystem.Region;
+            }
+
+            if(!string.IsNullOrWhiteSpace(ms.Region))
+            {
+                return ms.Region;
+            }
+
+            return string.Empty;
+        }
+
+        private static Color HslToRgb(double h, double s, double l)
+        {
+            h = h % 360;
+            s = Math.Clamp(s, 0, 1);
+            l = Math.Clamp(l, 0, 1);
+
+            double c = (1 - Math.Abs(2 * l - 1)) * s;
+            double x = c * (1 - Math.Abs((h / 60.0) % 2 - 1));
+            double m = l - c / 2.0;
+
+            double r = 0, g = 0, b = 0;
+            if(h < 60)
+            {
+                r = c; g = x; b = 0;
+            }
+            else if(h < 120)
+            {
+                r = x; g = c; b = 0;
+            }
+            else if(h < 180)
+            {
+                r = 0; g = c; b = x;
+            }
+            else if(h < 240)
+            {
+                r = 0; g = x; b = c;
+            }
+            else if(h < 300)
+            {
+                r = x; g = 0; b = c;
+            }
+            else
+            {
+                r = c; g = 0; b = x;
+            }
+
+            byte rb = (byte)Math.Round((r + m) * 255);
+            byte gb = (byte)Math.Round((g + m) * 255);
+            byte bb = (byte)Math.Round((b + m) * 255);
+            return Color.FromRgb(rb, gb, bb);
+        }
+
         private void LayoutEditToggle_Checked(object sender, RoutedEventArgs e)
         {
             if(Region == null)
@@ -4151,6 +4610,11 @@ namespace SMT
             SaveLayoutBtn.IsEnabled = true;
             AutoLayoutBtn.IsEnabled = true;
             SnapToGridChk.IsEnabled = true;
+            if(MapConf != null)
+            {
+                m_PreviousShowToolBox = MapConf.ShowToolBox;
+                MapConf.ShowToolBox = true;
+            }
             ReDrawMap(true);
         }
 
@@ -4161,6 +4625,10 @@ namespace SMT
             AutoLayoutBtn.IsEnabled = false;
             m_DragSystem = null;
             MainCanvas.ReleaseMouseCapture();
+            if(MapConf != null)
+            {
+                MapConf.ShowToolBox = m_PreviousShowToolBox;
+            }
             ReDrawMap(true);
         }
 
@@ -4331,6 +4799,48 @@ namespace SMT
                 constellation.Content = "Const\t:  " + selectedSys.ActualSystem.ConstellationName;
                 constellation.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
                 SystemInfoPopupSP.Children.Add(constellation);
+
+                Label region = new Label();
+                region.Padding = one;
+                region.Margin = one;
+                region.Content = "Region\t:  " + selectedSys.ActualSystem.Region;
+                region.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                SystemInfoPopupSP.Children.Add(region);
+
+                if(Region != null && Region.IsCustom)
+                {
+                    string regionName = GetSystemRegionName(selectedSys);
+                    Brush tint = GetRegionTintBrush(regionName);
+                    if(tint != null)
+                    {
+                        StackPanel colorRow = new StackPanel
+                        {
+                            Orientation = Orientation.Horizontal,
+                            Margin = one
+                        };
+
+                        Rectangle swatch = new Rectangle
+                        {
+                            Width = 12,
+                            Height = 12,
+                            Fill = tint,
+                            Stroke = GetRegionTintStrokeBrush(regionName),
+                            StrokeThickness = 1,
+                            Margin = new Thickness(0, 2, 6, 0)
+                        };
+
+                        Label swatchLabel = new Label
+                        {
+                            Content = "Region Color",
+                            Padding = new Thickness(0),
+                            Margin = new Thickness(0)
+                        };
+
+                        colorRow.Children.Add(swatch);
+                        colorRow.Children.Add(swatchLabel);
+                        SystemInfoPopupSP.Children.Add(colorRow);
+                    }
+                }
 
                 Label secstatus = new Label();
                 secstatus.Padding = one;

@@ -2156,6 +2156,7 @@ namespace SMT.EVEData
                 ms.ActualSystem = GetEveSystem(ms.Name);
             }
 
+            RebuildRegionVoronoiCells(clone);
             SaveCustomRegion(clone);
 
             MapRegion existing = GetRegion(clone.Name);
@@ -2235,6 +2236,7 @@ namespace SMT.EVEData
                 ms.ActualSystem = GetEveSystem(ms.Name);
             }
 
+            RebuildRegionVoronoiCells(result);
             SaveCustomRegion(result);
 
             MapRegion existing = GetRegion(result.Name);
@@ -2458,12 +2460,25 @@ namespace SMT.EVEData
                     region.AllowEdit = false;
                 }
 
+                foreach(MapSystem ms in region.MapSystems.Values)
+                {
+                    ms.ActualSystem = GetEveSystem(ms.Name);
+                    if(ms.ActualSystem != null)
+                    {
+                        if(string.IsNullOrWhiteSpace(ms.Region) || ms.Region == region.Name)
+                        {
+                            ms.Region = ms.ActualSystem.Region;
+                        }
+                    }
+                }
+
                 MapRegion existing = GetRegion(region.Name);
                 if(existing != null)
                 {
                     Regions.Remove(existing);
                 }
                 Regions.Add(region);
+                RebuildRegionVoronoiCells(region);
             }
         }
 
@@ -2526,6 +2541,7 @@ namespace SMT.EVEData
                 gsf.GroupName = "Custom Regions";
                 gsf.AllowEdit = true;
 
+                RebuildRegionVoronoiCells(gsf);
                 SaveCustomRegion(gsf);
             }
         }
