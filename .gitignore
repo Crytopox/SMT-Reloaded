@@ -362,3 +362,4 @@ FodyWeavers.xsd
 *.p7s
 /EVEData/data/SourceMaps/raw
 /EVEData/data/SourceMaps/exported
+/EVEData/data/LayoutOverrides/MapLayoutOverrides_GSF Space.dat
