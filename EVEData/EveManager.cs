@@ -2038,7 +2038,7 @@ namespace SMT.EVEData
                 overrides.Positions[ms.Name] = ms.Layout;
             }
 
-            string overrideFile = GetLayoutOverrideFileName(regionName);
+            string overrideFile = GetLayoutOverrideFileName(regionName, region.IsCustom);
             string overrideFolder = Path.GetDirectoryName(overrideFile);
             if(!string.IsNullOrEmpty(overrideFolder))
             {
@@ -2503,7 +2503,7 @@ namespace SMT.EVEData
 
             foreach(MapRegion region in Regions)
             {
-                string overrideFile = GetLayoutOverrideFileName(region.Name);
+                string overrideFile = GetLayoutOverrideFileName(region.Name, region.IsCustom);
                 if(!File.Exists(overrideFile))
                 {
                     continue;
@@ -2546,9 +2546,59 @@ namespace SMT.EVEData
             }
         }
 
-        private string GetLayoutOverrideFileName(string regionName)
+        private void MigrateCustomLayoutOverrides()
+        {
+            if(Regions == null || Regions.Count == 0)
+            {
+                return;
+            }
+
+            string projectRoot = TryGetProjectRoot();
+            if(string.IsNullOrEmpty(projectRoot))
+            {
+                return;
+            }
+
+            string legacyFolder = Path.Combine(projectRoot, "EVEData", "data", "LayoutOverrides");
+            if(!Directory.Exists(legacyFolder))
+            {
+                return;
+            }
+
+            string customFolder = Path.Combine(EveAppConfig.VersionStorage, "CustomRegions", "LayoutOverrides");
+            Directory.CreateDirectory(customFolder);
+
+            foreach(MapRegion region in Regions)
+            {
+                if(region == null || !region.IsCustom)
+                {
+                    continue;
+                }
+
+                string safeName = SanitizeFileName(region.Name);
+                string legacyFile = Path.Combine(legacyFolder, $"MapLayoutOverrides_{safeName}.dat");
+                if(!File.Exists(legacyFile))
+                {
+                    continue;
+                }
+
+                string targetFile = Path.Combine(customFolder, $"MapLayoutOverrides_{safeName}.dat");
+                if(!File.Exists(targetFile))
+                {
+                    File.Copy(legacyFile, targetFile, overwrite: false);
+                }
+            }
+        }
+
+        private string GetLayoutOverrideFileName(string regionName, bool isCustom)
         {
             string safeName = SanitizeFileName(regionName);
+            if(isCustom)
+            {
+                string customFolder = Path.Combine(EveAppConfig.VersionStorage, "CustomRegions", "LayoutOverrides");
+                return Path.Combine(customFolder, $"MapLayoutOverrides_{safeName}.dat");
+            }
+
             string projectRoot = TryGetProjectRoot();
             if(!string.IsNullOrEmpty(projectRoot))
             {
@@ -3111,9 +3161,10 @@ namespace SMT.EVEData
                 SystemIDToName[s.ID] = s.Name;
             }
 
-            ApplyLayoutOverrides();
             EnsureCustomRegionDefaults();
             LoadCustomRegions();
+            MigrateCustomLayoutOverrides();
+            ApplyLayoutOverrides();
 
             foreach(MapRegion r in Regions)
             {
