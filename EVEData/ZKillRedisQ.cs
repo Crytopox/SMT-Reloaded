@@ -144,12 +144,8 @@ namespace HISA.EVEData
 
                 zs.VictimAllianceName = EveManager.Instance.GetAllianceName(zs.VictimAllianceID);
 
-                KillStream.Insert(0, zs);
-
-                if(KillsAddedEvent != null)
-                {
-                    KillsAddedEvent();
-                }
+                e.Result = zs;
+                return;
 
             }
             else
@@ -158,48 +154,67 @@ namespace HISA.EVEData
                 Thread.Sleep(10000);
             }
 
-            e.Result = 0;
+            e.Result = null;
         }
 
         private void zkb_DoWorkComplete(object sender, RunWorkerCompletedEventArgs e)
         {
-            bool updatedKillList = false;
-
-            List<int> AllianceIDs = new List<int>();
-
-            for(int i = KillStream.Count - 1; i >= 0; i--)
+            if(e != null && (e.Cancelled || e.Error != null))
             {
-                if(KillStream[i].VictimAllianceName == string.Empty)
-                {
-                    if(!EveManager.Instance.AllianceIDToTicker.ContainsKey(KillStream[i].VictimAllianceID) && !AllianceIDs.Contains(KillStream[i].VictimAllianceID) && KillStream[i].VictimAllianceID != 0)
-                    {
-                        AllianceIDs.Add(KillStream[i].VictimAllianceID);
-                    }
-                    else
-                    {
-                        KillStream[i].VictimAllianceName = EveManager.Instance.GetAllianceName(KillStream[i].VictimAllianceID);
-                    }
-                }
-
-                if(KillStream[i].KillTime + TimeSpan.FromMinutes(KillExpireTimeMinutes) < DateTimeOffset.Now)
-                {
-                    KillStream.RemoveAt(i);
-
-                    updatedKillList = true;
-                }
-            }
-            if(AllianceIDs.Count > 0)
-            {
-                EveManager.Instance.ResolveAllianceIDs(AllianceIDs);
+                return;
             }
 
-            if(updatedKillList)
+            Action processUpdates = () =>
             {
-                // kills are coming in so fast that this is redundant
-                if(KillsAddedEvent != null)
+                bool updatedKillList = false;
+                bool addedKill = false;
+
+                if(e?.Result is ZKBDataSimple newKill)
                 {
-                    KillsAddedEvent();
+                    KillStream.Insert(0, newKill);
+                    addedKill = true;
                 }
+
+                List<int> allianceIDs = new List<int>();
+                for(int i = KillStream.Count - 1; i >= 0; i--)
+                {
+                    if(KillStream[i].VictimAllianceName == string.Empty)
+                    {
+                        if(!EveManager.Instance.AllianceIDToTicker.ContainsKey(KillStream[i].VictimAllianceID) && !allianceIDs.Contains(KillStream[i].VictimAllianceID) && KillStream[i].VictimAllianceID != 0)
+                        {
+                            allianceIDs.Add(KillStream[i].VictimAllianceID);
+                        }
+                        else
+                        {
+                            KillStream[i].VictimAllianceName = EveManager.Instance.GetAllianceName(KillStream[i].VictimAllianceID);
+                        }
+                    }
+
+                    if(KillStream[i].KillTime + TimeSpan.FromMinutes(KillExpireTimeMinutes) < DateTimeOffset.Now)
+                    {
+                        KillStream.RemoveAt(i);
+                        updatedKillList = true;
+                    }
+                }
+
+                if(allianceIDs.Count > 0)
+                {
+                    EveManager.Instance.ResolveAllianceIDs(allianceIDs);
+                }
+
+                if(addedKill || updatedKillList)
+                {
+                    KillsAddedEvent?.Invoke();
+                }
+            };
+
+            if(EveManager.UIThreadInvoker != null)
+            {
+                EveManager.UIThreadInvoker(processUpdates);
+            }
+            else
+            {
+                processUpdates();
             }
         }
 
