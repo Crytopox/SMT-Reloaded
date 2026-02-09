@@ -32,6 +32,8 @@ namespace HISA
         private const double SYSTEM_TEXT_TEXT_SIZE = 6;
         private const double SYSTEM_SHAPE_OOR_SIZE = 14;
         private const double SYSTEM_SHAPE_OOR_OFFSET = SYSTEM_SHAPE_OOR_SIZE / 2;
+        private const double MISSING_LINK_STUB_LENGTH = 65;
+        private const double MISSING_LINK_INDICATOR_SIZE = 26;
 
         private const int SYSTEM_TEXT_WIDTH = 100;
         private const int SYSTEM_TEXT_HEIGHT = 50;
@@ -997,6 +999,7 @@ namespace HISA
             Brush SysOutRegionBrush = new SolidColorBrush(MapConf.ActiveColourScheme.OutRegionSystemColour);
             Brush SysTextBrush = new SolidColorBrush(MapConf.ActiveColourScheme.InRegionSystemTextColour);
             Brush LinkBrush = new SolidColorBrush(MapConf.ActiveColourScheme.NormalGateColour);
+            Brush MissingLinkBrush = new SolidColorBrush(MapConf.ActiveColourScheme.RegionGateColour);
 
             AddLayoutGrid();
             AddRegionTintBackground();
@@ -1109,6 +1112,11 @@ namespace HISA
                 Canvas.SetTop(name, mapSystem.Layout.Y - SYSTEM_SHAPE_OFFSET - 2);
                 Canvas.SetZIndex(name, ZINDEX_TEXT);
                 MainCanvas.Children.Add(name);
+            }
+
+            if(m_IsLayoutEditMode && m_SelectedSystems.Count > 0)
+            {
+                AddMissingConnectionStubs(m_SelectedSystems, MissingLinkBrush);
             }
 
             if(m_IsSelecting && m_SelectHasDrag)
@@ -2683,6 +2691,7 @@ namespace HISA
             Brush NormalGateBrush = new SolidColorBrush(MapConf.ActiveColourScheme.NormalGateColour);
             Brush ConstellationGateBrush = new SolidColorBrush(MapConf.ActiveColourScheme.ConstellationGateColour);
             Brush RegionGateBrush = new SolidColorBrush(MapConf.ActiveColourScheme.RegionGateColour);
+            Brush MissingLinkBrush = new SolidColorBrush(MapConf.ActiveColourScheme.RegionGateColour);
 
             // cache all system links
             List<GateHelper> systemLinks = new List<GateHelper>();
@@ -2850,6 +2859,11 @@ namespace HISA
                     Canvas.SetTop(SystemOutline, mapSystem.Layout.Y - shapeOffset);
                     Canvas.SetZIndex(SystemOutline, ZINDEX_SYSTEM_OUTLINE);
                     MainCanvas.Children.Add(SystemOutline);
+                }
+
+                if(HasMissingDirectConnections(mapSystem))
+                {
+                    AddMissingConnectionIndicator(mapSystem);
                 }
 
                 if(ShowSystemADM && mapSystem.ActualSystem.IHubOccupancyLevel != 0.0 && !ShowSystemTimers && !mapSystem.OutOfRegion)
@@ -3718,10 +3732,6 @@ namespace HISA
         /// <param name="e"></param>
         private void ShapeMouseDownHandler(object sender, MouseButtonEventArgs e)
         {
-            if(m_IsLayoutEditMode)
-            {
-                return;
-            }
             Shape obj = sender as Shape;
 
             EVEData.MapSystem selectedSys = obj.DataContext as EVEData.MapSystem;
@@ -3732,6 +3742,11 @@ namespace HISA
 
             if(m_IsLayoutEditMode)
             {
+                if(e.ChangedButton == MouseButton.Right)
+                {
+                    ShowLayoutContextMenu(obj, selectedSys);
+                    e.Handled = true;
+                }
                 return;
             }
 
@@ -3862,6 +3877,499 @@ namespace HISA
                 }
 
                 cm.IsOpen = true;
+            }
+        }
+
+        private void ShowLayoutContextMenu(Shape target, EVEData.MapSystem selectedSys)
+        {
+            if(target == null || selectedSys == null)
+            {
+                return;
+            }
+
+            if(!CanEditCustomRegionLayout())
+            {
+                return;
+            }
+
+            ContextMenu cm = this.FindResource("SysLayoutRightClickContextMenu") as ContextMenu;
+            if(cm == null)
+            {
+                return;
+            }
+
+            cm.PlacementTarget = target;
+            cm.DataContext = selectedSys;
+
+            MenuItem addMissing = cm.Items.Count > 2 ? cm.Items[2] as MenuItem : null;
+            MenuItem deleteNode = cm.Items.Count > 3 ? cm.Items[3] as MenuItem : null;
+
+            bool hasMissing = HasMissingDirectConnections(selectedSys);
+            if(addMissing != null)
+            {
+                addMissing.IsEnabled = hasMissing;
+            }
+
+            if(deleteNode != null)
+            {
+                deleteNode.IsEnabled = true;
+            }
+
+            cm.IsOpen = true;
+        }
+
+        private bool CanEditCustomRegionLayout()
+        {
+            if(Region == null || EM == null)
+            {
+                return false;
+            }
+
+            if(!m_IsLayoutEditMode)
+            {
+                return false;
+            }
+
+            return Region.IsCustom && Region.AllowEdit;
+        }
+
+        private bool HasMissingDirectConnections(EVEData.MapSystem selectedSys)
+        {
+            if(selectedSys == null || EM == null)
+            {
+                return false;
+            }
+
+            if(selectedSys.ActualSystem == null)
+            {
+                selectedSys.ActualSystem = EM.GetEveSystem(selectedSys.Name);
+            }
+
+            if(selectedSys.ActualSystem == null || selectedSys.ActualSystem.Jumps == null)
+            {
+                return false;
+            }
+
+            foreach(string jump in selectedSys.ActualSystem.Jumps)
+            {
+                if(!Region.MapSystems.ContainsKey(jump))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void LayoutAddMissingConnections_Click(object sender, RoutedEventArgs e)
+        {
+            if(!CanEditCustomRegionLayout())
+            {
+                return;
+            }
+
+            EVEData.MapSystem selectedSys = GetContextMenuSystem(sender);
+            if(selectedSys == null)
+            {
+                return;
+            }
+
+            AddMissingDirectConnections(selectedSys);
+        }
+
+        private void LayoutDeleteSystem_Click(object sender, RoutedEventArgs e)
+        {
+            if(!CanEditCustomRegionLayout())
+            {
+                return;
+            }
+
+            EVEData.MapSystem selectedSys = GetContextMenuSystem(sender);
+            if(selectedSys == null)
+            {
+                return;
+            }
+
+            List<MapSystem> targets = new List<MapSystem>();
+            if(m_SelectedSystems.Count > 0 && m_SelectedSystems.Contains(selectedSys))
+            {
+                targets.AddRange(m_SelectedSystems.Where(ms => ms != null));
+            }
+            else
+            {
+                targets.Add(selectedSys);
+            }
+
+            if(targets.Count == 0)
+            {
+                return;
+            }
+
+            string confirmMessage = targets.Count == 1
+                ? $"Remove system '{targets[0].Name}' from custom region '{Region.Name}'?"
+                : $"Remove {targets.Count} systems from custom region '{Region.Name}'?";
+
+            MessageBoxResult confirm = MessageBox.Show(
+                confirmMessage,
+                "Layout Edit",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+
+            if(confirm != MessageBoxResult.Yes)
+            {
+                return;
+            }
+
+            HashSet<string> targetNames = new HashSet<string>(targets.Select(t => t.Name), StringComparer.Ordinal);
+            foreach(string name in targetNames)
+            {
+                Region.MapSystems.Remove(name);
+            }
+
+            m_SelectedSystems.RemoveWhere(ms => ms == null || targetNames.Contains(ms.Name));
+            if(m_DragSystem != null && targetNames.Contains(m_DragSystem.Name))
+            {
+                m_DragSystem = null;
+            }
+            if(m_DragAnchor != null && targetNames.Contains(m_DragAnchor.Name))
+            {
+                m_DragAnchor = null;
+            }
+
+            if(!string.IsNullOrEmpty(SelectedSystem) && targetNames.Contains(SelectedSystem))
+            {
+                SelectedSystem = string.Empty;
+            }
+
+            EM.RebuildRegionCells(Region);
+            EM.SaveCustomRegion(Region);
+            ReDrawMap(true);
+        }
+
+        private EVEData.MapSystem GetContextMenuSystem(object sender)
+        {
+            if(sender is FrameworkElement fe && fe.DataContext is EVEData.MapSystem ms)
+            {
+                return ms;
+            }
+
+            if(sender is MenuItem mi && mi.Parent is ContextMenu cm && cm.DataContext is EVEData.MapSystem cms)
+            {
+                return cms;
+            }
+
+            return null;
+        }
+
+        private void AddMissingDirectConnections(EVEData.MapSystem selectedSys)
+        {
+            if(selectedSys == null || EM == null || Region == null)
+            {
+                return;
+            }
+
+            if(selectedSys.ActualSystem == null)
+            {
+                selectedSys.ActualSystem = EM.GetEveSystem(selectedSys.Name);
+            }
+
+            if(selectedSys.ActualSystem == null || selectedSys.ActualSystem.Jumps == null)
+            {
+                return;
+            }
+
+            List<string> missing = selectedSys.ActualSystem.Jumps
+                .Where(j => !Region.MapSystems.ContainsKey(j))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            if(missing.Count == 0)
+            {
+                return;
+            }
+
+            MapSystem baseSelected = GetBaseMapSystem(selectedSys.ActualSystem);
+            int added = 0;
+            int total = missing.Count;
+
+            foreach(string jump in missing)
+            {
+                EVEData.System targetSys = EM.GetEveSystem(jump);
+                if(targetSys == null)
+                {
+                    continue;
+                }
+
+                MapSystem baseTarget = GetBaseMapSystem(targetSys);
+                MapSystem newMs = baseTarget != null ? CloneMapSystem(baseTarget) : new MapSystem
+                {
+                    Name = targetSys.Name,
+                    Layout = selectedSys.Layout,
+                    TextPos = MapSystem.TextPosition.Bottom,
+                    OutOfRegion = false,
+                    Region = targetSys.Region,
+                    CellPoints = new List<Vector2>()
+                };
+
+                newMs.ActualSystem = targetSys;
+                newMs.Region = targetSys.Region;
+                newMs.Layout = GetSuggestedLayoutForNewSystem(selectedSys, baseSelected, baseTarget, added, total);
+
+                Region.MapSystems[newMs.Name] = newMs;
+                m_SelectedSystems.Add(newMs);
+                added++;
+            }
+
+            EM.RebuildRegionCells(Region);
+            EM.SaveCustomRegion(Region);
+            ReDrawMap(true);
+        }
+
+        private MapSystem GetBaseMapSystem(EVEData.System sys)
+        {
+            if(sys == null || EM == null)
+            {
+                return null;
+            }
+
+            MapRegion baseRegion = EM.GetRegion(sys.Region);
+            if(baseRegion == null || baseRegion.MapSystems == null)
+            {
+                return null;
+            }
+
+            if(baseRegion.MapSystems.TryGetValue(sys.Name, out MapSystem baseMs))
+            {
+                return baseMs;
+            }
+
+            return null;
+        }
+
+        private static MapSystem CloneMapSystem(MapSystem source)
+        {
+            if(source == null)
+            {
+                return null;
+            }
+
+            return new MapSystem
+            {
+                Name = source.Name,
+                Layout = source.Layout,
+                TextPos = source.TextPos,
+                OutOfRegion = source.OutOfRegion,
+                Region = source.Region,
+                CellPoints = source.CellPoints != null ? new List<Vector2>(source.CellPoints) : new List<Vector2>()
+            };
+        }
+
+        private Vector2 GetSuggestedLayoutForNewSystem(MapSystem selectedSys, MapSystem baseSelected, MapSystem baseTarget, int index, int total)
+        {
+            Vector2 anchor = selectedSys.Layout;
+            Vector2 direction = Vector2.Zero;
+
+            if(baseSelected != null && baseTarget != null)
+            {
+                Vector2 raw = baseTarget.Layout - baseSelected.Layout;
+                if(raw.LengthSquared() > 0.001f)
+                {
+                    direction = Vector2.Normalize(raw);
+                }
+            }
+
+            if(direction.LengthSquared() < 0.001f)
+            {
+                double angle = (Math.PI * 2 * index) / Math.Max(1, total);
+                direction = new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+            }
+
+            Vector2 pos = FindFreeLayoutPosition(anchor, direction, 140f, 28f);
+            if(m_SnapToGrid)
+            {
+                pos = SnapToGrid(pos);
+            }
+
+            return pos;
+        }
+
+        private Vector2 FindFreeLayoutPosition(Vector2 anchor, Vector2 direction, float startDistance, float minDistance)
+        {
+            float distance = startDistance;
+            for(int i = 0; i < 10; i++)
+            {
+                Vector2 candidate = anchor + direction * distance;
+                if(IsLayoutPositionFree(candidate, minDistance))
+                {
+                    return candidate;
+                }
+                distance += minDistance;
+            }
+
+            return anchor + direction * startDistance;
+        }
+
+        private bool IsLayoutPositionFree(Vector2 pos, float minDistance)
+        {
+            float minDistSq = minDistance * minDistance;
+            foreach(MapSystem ms in Region.MapSystems.Values)
+            {
+                Vector2 delta = ms.Layout - pos;
+                if(delta.LengthSquared() < minDistSq)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private Vector2 SnapToGrid(Vector2 pos)
+        {
+            float x = (float)Math.Round(pos.X / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+            float y = (float)Math.Round(pos.Y / LAYOUT_GRID_SIZE) * LAYOUT_GRID_SIZE;
+            return new Vector2(x, y);
+        }
+
+        private void AddMissingConnectionIndicator(MapSystem mapSystem)
+        {
+            if(mapSystem == null)
+            {
+                return;
+            }
+
+            double size = MISSING_LINK_INDICATOR_SIZE;
+            if(mapSystem.OutOfRegion)
+            {
+                size = Math.Max(SYSTEM_SHAPE_OOR_SIZE + 6, MISSING_LINK_INDICATOR_SIZE - 4);
+            }
+
+            Brush stroke = new SolidColorBrush(MapConf.ActiveColourScheme.RegionGateColour);
+            Ellipse ring = new Ellipse
+            {
+                Width = size,
+                Height = size,
+                Stroke = stroke,
+                StrokeThickness = 1.2,
+                StrokeDashArray = new DoubleCollection { 2, 2 },
+                StrokeDashCap = PenLineCap.Round,
+                Fill = Brushes.Transparent,
+                IsHitTestVisible = false,
+                Opacity = 0.85
+            };
+
+            double offset = size / 2;
+            Canvas.SetLeft(ring, mapSystem.Layout.X - offset);
+            Canvas.SetTop(ring, mapSystem.Layout.Y - offset);
+            Canvas.SetZIndex(ring, ZINDEX_SYSTEM_OUTLINE - 1);
+            MainCanvas.Children.Add(ring);
+        }
+
+        private void AddMissingConnectionStubs(IEnumerable<MapSystem> sources, Brush missingBrush)
+        {
+            if(sources == null || EM == null)
+            {
+                return;
+            }
+
+            DoubleCollection dashes = new DoubleCollection { 3, 3 };
+            HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach(MapSystem mapSystem in sources)
+            {
+                if(mapSystem == null)
+                {
+                    continue;
+                }
+
+                EVEData.System sys = mapSystem.ActualSystem ?? EM.GetEveSystem(mapSystem.Name);
+                if(sys == null || sys.Jumps == null)
+                {
+                    continue;
+                }
+
+                foreach(string jump in sys.Jumps)
+                {
+                    if(Region.MapSystems.ContainsKey(jump))
+                    {
+                        continue;
+                    }
+
+                    string key = mapSystem.Name + "->" + jump;
+                    if(!seen.Add(key))
+                    {
+                        continue;
+                    }
+
+                    EVEData.System targetSys = EM.GetEveSystem(jump);
+                    if(targetSys == null)
+                    {
+                        continue;
+                    }
+
+                    Vector2 dir = GetMissingLinkDirection(mapSystem, targetSys);
+                    if(dir.LengthSquared() < 0.001f)
+                    {
+                        continue;
+                    }
+
+                    Vector2 end = mapSystem.Layout + dir * (float)MISSING_LINK_STUB_LENGTH;
+
+                    Line stub = new Line
+                    {
+                        X1 = mapSystem.Layout.X,
+                        Y1 = mapSystem.Layout.Y,
+                        X2 = end.X,
+                        Y2 = end.Y,
+                        Stroke = missingBrush,
+                        StrokeThickness = 1.4,
+                        StrokeDashArray = dashes,
+                        StrokeDashCap = PenLineCap.Round,
+                        Opacity = 0.9,
+                        IsHitTestVisible = false
+                    };
+
+                    Canvas.SetZIndex(stub, ZINDEX_POLY);
+                    MainCanvas.Children.Add(stub);
+                }
+            }
+        }
+
+        private Vector2 GetMissingLinkDirection(MapSystem from, EVEData.System target)
+        {
+            MapSystem baseFrom = GetBaseMapSystem(from.ActualSystem ?? EM.GetEveSystem(from.Name));
+            MapSystem baseTarget = GetBaseMapSystem(target);
+
+            if(baseFrom != null && baseTarget != null)
+            {
+                Vector2 raw = baseTarget.Layout - baseFrom.Layout;
+                if(raw.LengthSquared() > 0.001f)
+                {
+                    return Vector2.Normalize(raw);
+                }
+            }
+
+            int hash = StableHash(from.Name + "->" + target.Name);
+            int angleDeg = Math.Abs(hash % 360);
+            double angle = angleDeg * (Math.PI / 180.0);
+            return new Vector2((float)Math.Cos(angle), (float)Math.Sin(angle));
+        }
+
+        private static int StableHash(string value)
+        {
+            if(string.IsNullOrEmpty(value))
+            {
+                return 0;
+            }
+
+            unchecked
+            {
+                int hash = (int)2166136261;
+                for(int i = 0; i < value.Length; i++)
+                {
+                    hash ^= value[i];
+                    hash *= 16777619;
+                }
+                return hash;
             }
         }
 

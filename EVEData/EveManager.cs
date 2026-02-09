@@ -2268,6 +2268,16 @@ namespace HISA.EVEData
             return true;
         }
 
+        public void RebuildRegionCells(MapRegion region)
+        {
+            if(region == null)
+            {
+                return;
+            }
+
+            RebuildRegionVoronoiCells(region);
+        }
+
         private static MapSystem CloneMapSystem(MapSystem source)
         {
             MapSystem ms = new MapSystem

@@ -53,6 +53,12 @@
             <MenuItem Header="Copy Name (encoded)" Click="SysContexMenuItemCopyEncoded_Click" />
             <MenuItem Header="Show In Universe" Click="SysContexMenuItemShowInUniverse_Click" />
         </ContextMenu>
+        <ContextMenu x:Key="SysLayoutRightClickContextMenu">
+            <MenuItem Header="{Binding Name}" FontWeight="Bold" />
+            <Separator />
+            <MenuItem Header="Add Missing Direct Connections" Click="LayoutAddMissingConnections_Click" />
+            <MenuItem Header="Delete System Node" Click="LayoutDeleteSystem_Click" />
+        </ContextMenu>
     </UserControl.Resources>
 
     <Grid>
