@@ -1,8 +1,8 @@
-﻿# HISA
-Haakario Interstellar Survey Authority (HISA)
-
-# Acknowledgment
+﻿# Acknowledgment
 HISA is a standalone fork of the original SMT (Slazanger's Map Tool). The original project and its contributors are acknowledged and credited.
+
+# HISA
+Haakario Interstellar Survey Authority (HISA)
 
 HISA is a standalone EVE Online map and intel toolkit focused on intel visualization, custom regions, and fast operational overlays.
 
