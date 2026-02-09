@@ -4252,6 +4252,16 @@ namespace HISA
             RotateLayoutSelection(GetContextMenuSystem(sender), 180);
         }
 
+        private void LayoutFlipHorizontal_Click(object sender, RoutedEventArgs e)
+        {
+            MirrorLayoutSelection(GetContextMenuSystem(sender), flipHorizontal: true);
+        }
+
+        private void LayoutFlipVertical_Click(object sender, RoutedEventArgs e)
+        {
+            MirrorLayoutSelection(GetContextMenuSystem(sender), flipHorizontal: false);
+        }
+
         private void RotateLayoutSelection(EVEData.MapSystem contextSystem, int degrees)
         {
             if(!CanEditCustomRegionLayout())
@@ -4292,6 +4302,53 @@ namespace HISA
                 );
 
                 Vector2 newPos = center + rotated;
+                if(m_SnapToGrid)
+                {
+                    newPos = SnapToGrid(newPos);
+                }
+                ms.Layout = newPos;
+            }
+
+            EM.RebuildRegionCells(Region);
+            EM.SaveCustomRegion(Region);
+            ReDrawMap(true);
+        }
+
+        private void MirrorLayoutSelection(EVEData.MapSystem contextSystem, bool flipHorizontal)
+        {
+            if(!CanEditCustomRegionLayout())
+            {
+                return;
+            }
+
+            List<MapSystem> targets = new List<MapSystem>();
+            if(contextSystem != null && m_SelectedSystems.Count > 0 && m_SelectedSystems.Contains(contextSystem))
+            {
+                targets.AddRange(m_SelectedSystems.Where(ms => ms != null));
+            }
+            else if(contextSystem != null)
+            {
+                targets.Add(contextSystem);
+            }
+            else
+            {
+                targets.AddRange(m_SelectedSystems.Where(ms => ms != null));
+            }
+
+            if(targets.Count < 2)
+            {
+                return;
+            }
+
+            Vector2 center = GetSelectionCenter(targets);
+            foreach(MapSystem ms in targets)
+            {
+                Vector2 rel = ms.Layout - center;
+                Vector2 mirrored = flipHorizontal
+                    ? new Vector2(-rel.X, rel.Y)
+                    : new Vector2(rel.X, -rel.Y);
+
+                Vector2 newPos = center + mirrored;
                 if(m_SnapToGrid)
                 {
                     newPos = SnapToGrid(newPos);

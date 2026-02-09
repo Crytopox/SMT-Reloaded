@@ -941,19 +941,10 @@ namespace HISA
 
             if(manualZKillFilterRefreshRequired)
             {
-                try
+                if(TryRefreshZKillFeedView())
                 {
-                    Application.Current.Dispatcher.Invoke((Action)(() =>
-                    {
-                        CollectionViewSource.GetDefaultView(ZKBFeed.ItemsSource).Refresh();
-                    }), DispatcherPriority.Normal);
+                    manualZKillFilterRefreshRequired = false;
                 }
-                catch
-                {
-                    // ignore the error
-                }
-
-                manualZKillFilterRefreshRequired = false;
             }
 
             // refresh the anomalies datagrid every 60 seconds to update the "since" column
@@ -1805,6 +1796,36 @@ namespace HISA
         private void OnZKillsAdded()
         {
             manualZKillFilterRefreshRequired = true;
+        }
+
+        private bool TryRefreshZKillFeedView()
+        {
+            if(ZKBFeed == null || ZKBFeed.ItemsSource == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                ICollectionView view = CollectionViewSource.GetDefaultView(ZKBFeed.ItemsSource);
+                if(view == null)
+                {
+                    return false;
+                }
+
+                view.Refresh();
+                return true;
+            }
+            catch(ArgumentOutOfRangeException)
+            {
+                // Transient list/view race; keep refresh flag set and retry next tick.
+                return false;
+            }
+            catch(InvalidOperationException)
+            {
+                // View can be temporarily unavailable while source is changing.
+                return false;
+            }
         }
 
         private void RawIntelBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
