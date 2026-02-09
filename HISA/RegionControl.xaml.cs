@@ -34,6 +34,10 @@ namespace HISA
         private const double SYSTEM_SHAPE_OOR_OFFSET = SYSTEM_SHAPE_OOR_SIZE / 2;
         private const double MISSING_LINK_STUB_LENGTH = 65;
         private const double MISSING_LINK_INDICATOR_SIZE = 26;
+        private const double JUMP_RANGE_BASE_MARKER_SIZE = SYSTEM_SHAPE_SIZE + 10;
+        private const double JUMP_RANGE_MARKER_STEP = 4;
+        private const double JUMP_RANGE_ORIGIN_RING_SIZE = SYSTEM_SHAPE_SIZE + 18;
+        private const double JUMP_RANGE_SEGMENT_RING_SIZE = SYSTEM_SHAPE_SIZE + 14;
 
         private const int SYSTEM_TEXT_WIDTH = 100;
         private const int SYSTEM_TEXT_HEIGHT = 50;
@@ -1718,9 +1722,6 @@ namespace HISA
             SolidColorBrush PositiveDeltaColor = new SolidColorBrush(Colors.Green);
             SolidColorBrush NegativeDeltaColor = new SolidColorBrush(Colors.Red);
 
-            Brush JumpInRange = new SolidColorBrush(MapConf.ActiveColourScheme.JumpRangeInColour);
-            Brush JumpInRangeMulti = new SolidColorBrush(Colors.Black);
-
             SolidColorBrush infoColourDelta = new SolidColorBrush(DataLargeColorDelta);
 
             SolidColorBrush zkbColour = new SolidColorBrush(MapConf.ActiveColourScheme.ZKillDataOverlay);
@@ -1729,44 +1730,18 @@ namespace HISA
             SolidColorBrush infoVulnerable = new SolidColorBrush(MapConf.ActiveColourScheme.SOVStructureVulnerableColour);
             SolidColorBrush infoVulnerableSoon = new SolidColorBrush(MapConf.ActiveColourScheme.SOVStructureVulnerableSoonColour);
 
+            List<JumpRangeOrigin> jumpOrigins = BuildJumpRangeOrigins();
             BridgeInfoStackPanel.Children.Clear();
-            if(!string.IsNullOrEmpty(currentJumpCharacter))
+            foreach(JumpRangeOrigin origin in jumpOrigins)
             {
-                EVEData.System js = EM.GetEveSystem(currentCharacterJumpSystem);
-                if(js != null)
-                {
-                    string text = "";
-                    if(MapConf.ShowCharacterNamesOnMap)
-                    {
-                        text = $"{jumpShipType} range from {currentJumpCharacter} : {currentCharacterJumpSystem} ({js.Region})";
-                    }
-                    else
-                    {
-                        text = $"{jumpShipType} range from {currentCharacterJumpSystem} ({js.Region})";
-                    }
-
-                    Label l = new Label();
-                    l.Content = text;
-                    l.FontSize = 14;
-                    l.FontWeight = FontWeights.Bold;
-                    l.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.InRegionSystemTextColour);
-
-                    BridgeInfoStackPanel.Children.Add(l);
-                }
-            }
-            foreach(string key in activeJumpSpheres.Keys)
-            {
-                EVEData.System js = EM.GetEveSystem(key);
-                string text = $"{activeJumpSpheres[key]} range from {key} ({js.Region})";
-
                 Label l = new Label();
-                l.Content = text;
+                l.Content = origin.Label;
                 l.FontSize = 14;
                 l.FontWeight = FontWeights.Bold;
-                l.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.InRegionSystemTextColour);
-
+                l.Foreground = origin.Brush;
                 BridgeInfoStackPanel.Children.Add(l);
             }
+            AddJumpRangeOriginMarkers(jumpOrigins);
 
             foreach(EVEData.MapSystem sys in Region.MapSystems.Values.ToList())
             {
@@ -1985,123 +1960,12 @@ namespace HISA
                     }
                 }
 
-                if(activeJumpSpheres.Count > 0 || currentJumpCharacter != null)
+                if(jumpOrigins.Count > 0)
                 {
-                    bool AddHighlight = false;
-                    bool DoubleHighlight = false;
-
-                    // check character
-                    if(!string.IsNullOrEmpty(currentJumpCharacter))
+                    List<JumpRangeOrigin> inRangeOrigins = GetJumpRangeOriginsInRange(sys, jumpOrigins);
+                    if(inRangeOrigins.Count > 0)
                     {
-                        decimal Distance = EM.GetRangeBetweenSystems(currentCharacterJumpSystem, sys.Name);
-
-                        decimal Max = 0.1m;
-
-                        switch(jumpShipType)
-                        {
-                            case EVEData.EveManager.JumpShip.Super: { Max = 6.0m; } break;
-                            case EVEData.EveManager.JumpShip.Titan: { Max = 6.0m; } break;
-                            case EVEData.EveManager.JumpShip.Dread: { Max = 7.0m; } break;
-                            case EVEData.EveManager.JumpShip.Carrier: { Max = 7.0m; } break;
-                            case EVEData.EveManager.JumpShip.FAX: { Max = 7.0m; } break;
-                            case EVEData.EveManager.JumpShip.Blops: { Max = 8.0m; } break;
-                            case EVEData.EveManager.JumpShip.Rorqual: { Max = 10.0m; } break;
-                            case EVEData.EveManager.JumpShip.JF: { Max = 10.0m; } break;
-                        }
-
-                        if(Distance < Max && Distance > 0.0m && sys.ActualSystem.TrueSec <= 0.45 && currentCharacterJumpSystem != sys.Name)
-                        {
-                            AddHighlight = true;
-                        }
-                    }
-
-                    foreach(string key in activeJumpSpheres.Keys)
-                    {
-                        if(!string.IsNullOrEmpty(currentJumpCharacter) && key == currentCharacterJumpSystem)
-                        {
-                            continue;
-                        }
-
-                        decimal Distance = EM.GetRangeBetweenSystems(key, sys.Name);
-                        decimal Max = 0.1m;
-
-                        switch(activeJumpSpheres[key])
-                        {
-                            case EVEData.EveManager.JumpShip.Super: { Max = 6.0m; } break;
-                            case EVEData.EveManager.JumpShip.Titan: { Max = 6.0m; } break;
-                            case EVEData.EveManager.JumpShip.Dread: { Max = 7.0m; } break;
-                            case EVEData.EveManager.JumpShip.Carrier: { Max = 7.0m; } break;
-                            case EVEData.EveManager.JumpShip.FAX: { Max = 7.0m; } break;
-                            case EVEData.EveManager.JumpShip.Blops: { Max = 8.0m; } break;
-                            case EVEData.EveManager.JumpShip.Rorqual: { Max = 10.0m; } break;
-                            case EVEData.EveManager.JumpShip.JF: { Max = 10.0m; } break;
-                        }
-
-                        if(Distance < Max && Distance > 0.0m && sys.ActualSystem.TrueSec <= 0.45 && key != sys.Name)
-                        {
-                            if(AddHighlight)
-                            {
-                                DoubleHighlight = true;
-                            }
-                            AddHighlight = true;
-                        }
-                    }
-
-                    if(AddHighlight)
-                    {
-                        Brush HighlightBrush = JumpInRange;
-                        if(DoubleHighlight)
-                        {
-                            HighlightBrush = JumpInRangeMulti;
-                        }
-
-                        if(MapConf.JumpRangeInAsOutline)
-                        {
-                            Shape InRangeMarker;
-
-                            double ShapeSize = SYSTEM_SHAPE_SIZE + 10;
-                            double halfShapeSize = ShapeSize / 2;
-
-                            if(sys.ActualSystem.HasNPCStation)
-                            {
-                                InRangeMarker = new Rectangle() { Height = ShapeSize, Width = ShapeSize };
-                            }
-                            else
-                            {
-                                InRangeMarker = new Ellipse() { Height = ShapeSize, Width = ShapeSize };
-                            }
-
-                            InRangeMarker.Stroke = HighlightBrush;
-                            InRangeMarker.StrokeThickness = 6;
-                            InRangeMarker.StrokeLineJoin = PenLineJoin.Round;
-                            InRangeMarker.Fill = HighlightBrush;
-
-                            Canvas.SetLeft(InRangeMarker, sys.Layout.X - halfShapeSize);
-                            Canvas.SetTop(InRangeMarker, sys.Layout.Y - halfShapeSize);
-                            Canvas.SetZIndex(InRangeMarker, ZINDEX_RANGEMARKER);
-
-                            MainCanvas.Children.Add(InRangeMarker);
-                            DynamicMapElements.Add(InRangeMarker);
-                        }
-                        else
-                        {
-                            Polygon poly = new Polygon();
-
-                            foreach(Vector2 p in sys.CellPoints)
-                            {
-                                System.Windows.Point wp = new Point(p.X, p.Y);
-                                poly.Points.Add(wp);
-                            }
-
-                            poly.Fill = HighlightBrush;
-                            poly.SnapsToDevicePixels = true;
-                            poly.Stroke = poly.Fill;
-                            poly.StrokeThickness = 3;
-                            poly.StrokeDashCap = PenLineCap.Round;
-                            poly.StrokeLineJoin = PenLineJoin.Round;
-                            MainCanvas.Children.Add(poly);
-                            DynamicMapElements.Add(poly);
-                        }
+                        AddJumpRangeMarkers(sys, inRangeOrigins);
                     }
                 }
             }
@@ -2159,6 +2023,15 @@ namespace HISA
         private Brush Minmatar_CLO = new SolidColorBrush(Color.FromArgb(100, 140, 34, 41));
         private Brush Minmatar_RG = new SolidColorBrush(Color.FromArgb(100, 54, 11, 14));
 
+        private sealed class JumpRangeOrigin
+        {
+            public string Key { get; set; }
+            public string SystemName { get; set; }
+            public EVEData.EveManager.JumpShip Ship { get; set; }
+            public Brush Brush { get; set; }
+            public string Label { get; set; }
+        }
+
         private Brush GetBrushForFWState(FactionWarfareSystemInfo.State state, int Owner)
         {
             //500001: "Caldari State";
@@ -2206,6 +2079,325 @@ namespace HISA
             }
 
             return null;
+        }
+
+        private List<JumpRangeOrigin> BuildJumpRangeOrigins()
+        {
+            List<JumpRangeOrigin> origins = new List<JumpRangeOrigin>();
+            List<Color> palette = GetJumpRangePalette();
+            int colorIndex = 0;
+
+            if(!string.IsNullOrEmpty(currentJumpCharacter))
+            {
+                EVEData.System js = EM.GetEveSystem(currentCharacterJumpSystem);
+                if(js != null)
+                {
+                    string text = MapConf.ShowCharacterNamesOnMap
+                        ? $"{jumpShipType} range from {currentJumpCharacter} : {currentCharacterJumpSystem} ({js.Region})"
+                        : $"{jumpShipType} range from {currentCharacterJumpSystem} ({js.Region})";
+
+                    origins.Add(new JumpRangeOrigin
+                    {
+                        Key = "CHAR:" + currentCharacterJumpSystem,
+                        SystemName = currentCharacterJumpSystem,
+                        Ship = jumpShipType,
+                        Brush = new SolidColorBrush(palette[colorIndex % palette.Count]),
+                        Label = text
+                    });
+                    colorIndex++;
+                }
+            }
+
+            foreach(string key in activeJumpSpheres.Keys.OrderBy(k => k, StringComparer.Ordinal))
+            {
+                EVEData.System js = EM.GetEveSystem(key);
+                if(js == null)
+                {
+                    continue;
+                }
+
+                string text = $"{activeJumpSpheres[key]} range from {key} ({js.Region})";
+                origins.Add(new JumpRangeOrigin
+                {
+                    Key = key,
+                    SystemName = key,
+                    Ship = activeJumpSpheres[key],
+                    Brush = new SolidColorBrush(palette[colorIndex % palette.Count]),
+                    Label = text
+                });
+                colorIndex++;
+            }
+
+            return origins;
+        }
+
+        private List<Color> GetJumpRangePalette()
+        {
+            List<Color> colors = new List<Color>
+            {
+                MapConf.ActiveColourScheme.JumpRangeInColour,
+                Colors.DeepSkyBlue,
+                Colors.Orange,
+                Colors.Magenta,
+                Colors.LimeGreen,
+                Colors.Gold,
+                Colors.Cyan,
+                Colors.HotPink
+            };
+
+            List<Color> unique = new List<Color>();
+            foreach(Color c in colors)
+            {
+                if(!unique.Contains(c))
+                {
+                    unique.Add(c);
+                }
+            }
+
+            if(unique.Count == 0)
+            {
+                unique.Add(Colors.LimeGreen);
+            }
+
+            return unique;
+        }
+
+        private static decimal GetJumpRangeMax(EVEData.EveManager.JumpShip ship)
+        {
+            switch(ship)
+            {
+                case EVEData.EveManager.JumpShip.Super: return 6.0m;
+                case EVEData.EveManager.JumpShip.Titan: return 6.0m;
+                case EVEData.EveManager.JumpShip.Dread: return 7.0m;
+                case EVEData.EveManager.JumpShip.Carrier: return 7.0m;
+                case EVEData.EveManager.JumpShip.FAX: return 7.0m;
+                case EVEData.EveManager.JumpShip.Blops: return 8.0m;
+                case EVEData.EveManager.JumpShip.Rorqual: return 10.0m;
+                case EVEData.EveManager.JumpShip.JF: return 10.0m;
+            }
+
+            return 0.1m;
+        }
+
+        private List<JumpRangeOrigin> GetJumpRangeOriginsInRange(EVEData.MapSystem sys, List<JumpRangeOrigin> origins)
+        {
+            List<JumpRangeOrigin> inRange = new List<JumpRangeOrigin>();
+            foreach(JumpRangeOrigin origin in origins)
+            {
+                if(origin.SystemName == sys.Name)
+                {
+                    continue;
+                }
+
+                decimal distance = EM.GetRangeBetweenSystems(origin.SystemName, sys.Name);
+                decimal max = GetJumpRangeMax(origin.Ship);
+
+                if(distance < max && distance > 0.0m && sys.ActualSystem.TrueSec <= 0.45)
+                {
+                    inRange.Add(origin);
+                }
+            }
+
+            return inRange;
+        }
+
+        private void AddJumpRangeMarkers(EVEData.MapSystem sys, List<JumpRangeOrigin> origins)
+        {
+            if(origins == null || origins.Count == 0)
+            {
+                return;
+            }
+
+            if(MapConf.JumpRangeInAsOutline)
+            {
+                if(origins.Count == 1)
+                {
+                    AddSingleJumpRangeOutline(sys, origins[0].Brush);
+                }
+                else
+                {
+                    AddJumpRangeSegmentRing(sys, origins, JUMP_RANGE_SEGMENT_RING_SIZE, 4);
+                }
+            }
+            else
+            {
+                JumpRangeOrigin primary = origins[0];
+
+                Polygon poly = new Polygon();
+                foreach(Vector2 p in sys.CellPoints)
+                {
+                    System.Windows.Point wp = new Point(p.X, p.Y);
+                    poly.Points.Add(wp);
+                }
+
+                poly.Fill = primary.Brush;
+                poly.SnapsToDevicePixels = true;
+                poly.Stroke = poly.Fill;
+                poly.StrokeThickness = 3;
+                poly.StrokeDashCap = PenLineCap.Round;
+                poly.StrokeLineJoin = PenLineJoin.Round;
+                MainCanvas.Children.Add(poly);
+                DynamicMapElements.Add(poly);
+
+                if(origins.Count > 1)
+                {
+                    AddJumpRangeSegmentRing(sys, origins, JUMP_RANGE_SEGMENT_RING_SIZE, 3);
+                }
+            }
+        }
+
+        private void AddSingleJumpRangeOutline(EVEData.MapSystem sys, Brush brush)
+        {
+            double shapeSize = JUMP_RANGE_BASE_MARKER_SIZE;
+            double halfShapeSize = shapeSize / 2;
+
+            Shape marker;
+            if(sys.ActualSystem.HasNPCStation)
+            {
+                marker = new Rectangle { Height = shapeSize, Width = shapeSize };
+            }
+            else
+            {
+                marker = new Ellipse { Height = shapeSize, Width = shapeSize };
+            }
+
+            marker.Stroke = brush;
+            marker.StrokeThickness = 4;
+            marker.StrokeLineJoin = PenLineJoin.Round;
+            marker.Fill = brush;
+
+            Canvas.SetLeft(marker, sys.Layout.X - halfShapeSize);
+            Canvas.SetTop(marker, sys.Layout.Y - halfShapeSize);
+            Canvas.SetZIndex(marker, ZINDEX_RANGEMARKER);
+
+            MainCanvas.Children.Add(marker);
+            DynamicMapElements.Add(marker);
+        }
+
+        private void AddJumpRangeOriginMarkers(List<JumpRangeOrigin> origins)
+        {
+            if(origins == null || origins.Count == 0)
+            {
+                return;
+            }
+
+            foreach(JumpRangeOrigin origin in origins)
+            {
+                if(string.IsNullOrWhiteSpace(origin.SystemName))
+                {
+                    continue;
+                }
+
+                if(!Region.IsSystemOnMap(origin.SystemName))
+                {
+                    continue;
+                }
+
+                MapSystem sys = Region.MapSystems[origin.SystemName];
+                double size = JUMP_RANGE_ORIGIN_RING_SIZE;
+                double half = size / 2;
+
+                Ellipse ring = new Ellipse
+                {
+                    Width = size,
+                    Height = size,
+                    Stroke = origin.Brush,
+                    StrokeThickness = 2.5,
+                    StrokeDashArray = new DoubleCollection { 3, 3 },
+                    StrokeDashCap = PenLineCap.Round,
+                    Fill = Brushes.Transparent,
+                    IsHitTestVisible = false
+                };
+
+                Canvas.SetLeft(ring, sys.Layout.X - half);
+                Canvas.SetTop(ring, sys.Layout.Y - half);
+                Canvas.SetZIndex(ring, ZINDEX_RANGEMARKER + 1);
+                MainCanvas.Children.Add(ring);
+                DynamicMapElements.Add(ring);
+
+                DoubleAnimation da = new DoubleAnimation
+                {
+                    From = 0,
+                    To = -6,
+                    Duration = TimeSpan.FromSeconds(1.2),
+                    RepeatBehavior = RepeatBehavior.Forever
+                };
+                Timeline.SetDesiredFrameRate(da, 20);
+                ring.BeginAnimation(Shape.StrokeDashOffsetProperty, da);
+            }
+        }
+
+        private void AddJumpRangeSegmentRing(EVEData.MapSystem sys, List<JumpRangeOrigin> origins, double size, double strokeThickness)
+        {
+            if(origins == null || origins.Count == 0)
+            {
+                return;
+            }
+
+            int count = origins.Count;
+            double radius = size / 2.0;
+            double gapDegrees = 6.0;
+            double sweep = (360.0 / count) - gapDegrees;
+            if(sweep < 8.0)
+            {
+                sweep = Math.Max(2.0, sweep);
+            }
+
+            for(int i = 0; i < count; i++)
+            {
+                double start = (360.0 / count) * i + (gapDegrees / 2.0);
+                Path ring = CreateArcRingSegment(sys.Layout, radius, start, sweep, origins[i].Brush, strokeThickness);
+                if(ring == null)
+                {
+                    continue;
+                }
+
+                Canvas.SetZIndex(ring, ZINDEX_RANGEMARKER);
+                MainCanvas.Children.Add(ring);
+                DynamicMapElements.Add(ring);
+            }
+        }
+
+        private Path CreateArcRingSegment(Vector2 center, double radius, double startDegrees, double sweepDegrees, Brush stroke, double strokeThickness)
+        {
+            if(sweepDegrees <= 0)
+            {
+                return null;
+            }
+
+            double startRad = startDegrees * (Math.PI / 180.0);
+            double endRad = (startDegrees + sweepDegrees) * (Math.PI / 180.0);
+
+            Point start = new Point(center.X + (radius * Math.Cos(startRad)), center.Y + (radius * Math.Sin(startRad)));
+            Point end = new Point(center.X + (radius * Math.Cos(endRad)), center.Y + (radius * Math.Sin(endRad)));
+
+            bool isLarge = sweepDegrees > 180.0;
+
+            PathFigure fig = new PathFigure { StartPoint = start, IsClosed = false, IsFilled = false };
+            ArcSegment arc = new ArcSegment
+            {
+                Point = end,
+                Size = new Size(radius, radius),
+                IsLargeArc = isLarge,
+                SweepDirection = SweepDirection.Clockwise
+            };
+            fig.Segments.Add(arc);
+
+            PathGeometry geom = new PathGeometry();
+            geom.Figures.Add(fig);
+
+            Path path = new Path
+            {
+                Data = geom,
+                Stroke = stroke,
+                StrokeThickness = strokeThickness,
+                StrokeStartLineCap = PenLineCap.Round,
+                StrokeEndLineCap = PenLineCap.Round,
+                IsHitTestVisible = false,
+                Fill = Brushes.Transparent
+            };
+
+            return path;
         }
 
         private void AddFWDataToMap()
