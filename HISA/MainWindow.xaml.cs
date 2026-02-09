@@ -1084,6 +1084,19 @@ namespace HISA
             }
         }
 
+        private void ManageNavStructures_Click(object sender, RoutedEventArgs e)
+        {
+            NavStructuresWindow navWindow = new NavStructuresWindow();
+            navWindow.EM = EVEManager;
+            navWindow.Owner = this;
+            navWindow.ShowDialog();
+
+            if (RegionUC != null)
+            {
+                RegionUC.ReDrawMap(false);
+            }
+        }
+
         private void ImportCustomRegions_MenuItem_Click(object sender, RoutedEventArgs e)
         {
             RegionUC?.ImportCustomRegionsFromDialog();
@@ -1190,7 +1203,6 @@ namespace HISA
             preferencesWindow.DataContext = MapConf;
             preferencesWindow.MapConf = MapConf;
             preferencesWindow.EM = EVEManager;
-            preferencesWindow.Init();
             preferencesWindow.ShowDialog();
         }
 

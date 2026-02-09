@@ -61,6 +61,7 @@
 
                 <MenuItem Header="Data"  Height="Auto">
                     <MenuItem Header="Infrastructure Upgrades..." Click="ManageInfrastructureUpgrades_Click" />
+                    <MenuItem Header="Nav Structures..." Click="ManageNavStructures_Click" />
                     <Separator />
                     <MenuItem Header="Clear Old Eve logs" Click="ClearOldEVELogs_Click" />
                 </MenuItem>

@@ -120,80 +120,6 @@
                     </Grid>
                 </TabItem>
 
-                <TabItem Header="Nav Structures">
-                    <Grid Height="500" Width="600">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="50*" />
-                            <ColumnDefinition Width="50*" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Grid.Column="0" Grid.ColumnSpan="1" Margin="1">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Header="Ansiblex Gates" Margin="4" Height="auto">
-                                    <StackPanel>
-
-                                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="2" IsEnabled="true">
-                                            <Label Content="Gate SearchFilter : " />
-                                            <TextBox x:Name="GateSearchFilter" Text=" » " Width="167" />
-                                        </StackPanel>
-
-                                        <Button x:Name="ImportJumpGatesBtn" Content="Find Gates" Click="FindJumpGatesBtn_Click" Margin="2" IsEnabled="true" />
-                                        <Button x:Name="ClearJumpGatesBtn" Content="Clear Gates" Click="ClearJumpGatesBtn_Click" Margin="2" />
-                                        <Button x:Name="ImportPasteJumpGatesBtn" Content="Import from Clipboard" Click="ImportPasteJumpGatesBtn_Click" Margin="2" />
-                                        <Button x:Name="ExportJumpGatesBtn" Content="Export Jump Bridges" Click="ExportJumpGatesBtn_Click"  Margin="2" />
-                                        <Label x:Name="AnsiblexSummaryLbl" Content="" FontStyle="Italic" FontSize="12" />
-
-                                        <DataGrid x:Name="JumpBridgeList" Margin="2"  AutoGenerateColumns="False" AreRowDetailsFrozen="True" IsReadOnly="True" SelectionUnit="FullRow" SelectedItem="{Binding SelectedItemProperty, Mode=TwoWay}" Height="313">
-
-                                            <DataGrid.CellStyle>
-                                                <Style TargetType="{x:Type DataGridCell}">
-
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding FromID}" Value="0">
-                                                            <Setter Property="Background" Value="#222" />
-                                                        </DataTrigger>
-
-                                                        <DataTrigger Binding="{Binding ToID}" Value="0">
-                                                            <Setter Property="Background" Value="#222" />
-                                                        </DataTrigger>
-
-                                                        <DataTrigger Binding="{Binding Disabled}" Value="True">
-                                                            <Setter Property="Background" Value="Red" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </DataGrid.CellStyle>
-
-                                            <DataGrid.ContextMenu>
-                                                <ContextMenu>
-                                                    <MenuItem Header="Delete" Click="DeleteJumpGateMenuItem_Click" />
-                                                    <MenuItem Header="Enable/Disable" Click="EnableDisableJumpGateMenuItem_Click" />
-                                                </ContextMenu>
-                                            </DataGrid.ContextMenu>
-
-                                            <DataGrid.Columns>
-                                                <DataGridTextColumn Header="From" Binding="{Binding From}" Width="*" />
-                                                <DataGridTextColumn Header="To" Binding="{Binding To}" Width="*" />
-                                            </DataGrid.Columns>
-                                        </DataGrid>
-                                    </StackPanel>
-                                </GroupBox>
-                            </Border>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="1" Grid.ColumnSpan="1" Margin="1">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Header="Cyno Beacons" Margin="4" Height="auto">
-                                    <StackPanel>
-                                        <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowCynoBeacons}" Content="Show Cyno Beacons" />
-                                        <TextBox Width="271" Height="440" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=CynoBeaconSystems, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
-                                    </StackPanel>
-                                </GroupBox>
-                            </Border>
-                        </StackPanel>
-                    </Grid>
-                </TabItem>
-
                 <TabItem Header="Intel">
                     <Grid Height="500" Width="600">
                         <Grid.ColumnDefinitions>
@@ -325,16 +251,7 @@
                                 </GroupBox>
                             </Border>
                         </StackPanel>
-                        <StackPanel Grid.Column="1">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Header="Beacons" Margin="4" Height="auto">
-                                    <StackPanel>
-                                        <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowCynoBeacons}" Content="Show Cyno Beacons" />
-                                        <TextBox Width="271" Height="390" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=CynoBeaconSystems, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
-                                    </StackPanel>
-                                </GroupBox>
-                            </Border>
-                        </StackPanel>
+                        <StackPanel Grid.Column="1" />
                     </Grid>
                 </TabItem>
                 <TabItem Header="Overlay">
