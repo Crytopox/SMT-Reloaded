@@ -4,6 +4,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using HISA.EVEData;
+using Microsoft.Win32;
 
 namespace HISA
 {
@@ -31,6 +32,7 @@ namespace HISA
             {
                 // Set up the auto-save file path
                 upgradesFilePath = Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+                AutoSavePathText.Text = $"Autosave: {upgradesFilePath}";
 
                 // Populate system combo box with all null sec systems
                 var nullSecSystems = EM.Systems
@@ -226,6 +228,118 @@ namespace HISA
             currentUpgrades.Clear();
             RefreshAllUpgrades();
             AutoSave();
+        }
+
+        private void LoadFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (EM == null)
+            {
+                return;
+            }
+
+            OpenFileDialog dlg = new OpenFileDialog
+            {
+                DefaultExt = ".txt",
+                Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
+                Title = "Load Infrastructure Upgrades"
+            };
+
+            if (!string.IsNullOrEmpty(upgradesFilePath) && File.Exists(upgradesFilePath))
+            {
+                dlg.FileName = upgradesFilePath;
+            }
+            else
+            {
+                dlg.InitialDirectory = EveAppConfig.StorageRoot;
+            }
+
+            bool? result = dlg.ShowDialog();
+            if (result == true)
+            {
+                string filename = dlg.FileName;
+                EM.LoadInfrastructureUpgrades(filename);
+                upgradesFilePath = filename;
+                AutoSavePathText.Text = $"Autosave: {upgradesFilePath}";
+
+                RefreshAllUpgrades();
+                if (!string.IsNullOrEmpty(selectedSystemName))
+                {
+                    LoadUpgradesForSystem(selectedSystemName);
+                }
+
+                RefreshOwnerMap();
+            }
+        }
+
+        private void SaveFileButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (EM == null)
+            {
+                return;
+            }
+
+            SaveFileDialog dlg = new SaveFileDialog
+            {
+                DefaultExt = ".txt",
+                Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
+                Title = "Save Infrastructure Upgrades",
+                FileName = string.IsNullOrEmpty(upgradesFilePath)
+                    ? Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt")
+                    : upgradesFilePath
+            };
+
+            bool? result = dlg.ShowDialog();
+            if (result == true)
+            {
+                string filename = dlg.FileName;
+                EM.SaveInfrastructureUpgrades(filename);
+                upgradesFilePath = filename;
+                AutoSavePathText.Text = $"Autosave: {upgradesFilePath}";
+            }
+        }
+
+        private void ImportTextButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (EM == null)
+            {
+                return;
+            }
+
+            string text = ImportTextBox.Text ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                MessageBox.Show("Paste infrastructure upgrades text before importing.", "No Text Provided", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            EM.LoadInfrastructureUpgradesFromText(text);
+            RefreshAllUpgrades();
+            if (!string.IsNullOrEmpty(selectedSystemName))
+            {
+                LoadUpgradesForSystem(selectedSystemName);
+            }
+
+            AutoSave();
+        }
+
+        private void PasteClipboardButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (Clipboard.ContainsText())
+            {
+                ImportTextBox.Text = Clipboard.GetText();
+                ImportTextBox.CaretIndex = ImportTextBox.Text.Length;
+                ImportTextBox.Focus();
+            }
+            else
+            {
+                MessageBox.Show("Clipboard does not contain any text.", "Clipboard Empty", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+        }
+
+        private void ClearImportTextButton_Click(object sender, RoutedEventArgs e)
+        {
+            ImportTextBox.Clear();
+            ImportTextBox.Focus();
         }
 
         public class InfrastructureUpgradeSummary
