@@ -19,7 +19,7 @@ Project status
 - Data generation handled via the `DataGen` project
 
 Build from source
-- Install Visual Studio 2022 Community with `.NET desktop development`
+- Install Visual Studio Community with `.NET desktop development and .NET 8.0`
 - Open `HISA.sln`
 - Build and run `HISA` (Debug > Start Without Debugging)
 
