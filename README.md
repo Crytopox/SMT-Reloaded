@@ -1,10 +1,13 @@
 ﻿# HISA
 Haakario Interstellar Survey Authority (HISA)
 
+# Acknowledgment
+HISA is a standalone fork of the original SMT (Slazanger's Map Tool). The original project and its contributors are acknowledged and credited.
+
 HISA is a standalone EVE Online map and intel toolkit focused on intel visualization, custom regions, and fast operational overlays.
 
 Key features
-- Multi-view map: Regions, Region, and Universe views with dockable layout
+- Multi-view map: Regions and Universe views with dockable layout
 - Custom regions: create, import/export `.hisaregion` packs, and edit layouts
 - Layout overrides: per-region layout editing with persistent overrides
 - Intel workflows: log watchers, filters, alerts, and map overlays
@@ -23,6 +26,3 @@ Build from source
 Custom region packs
 - Export: `.hisaregion` (zip container with region XML)
 - Import: `.hisaregion`, `.zip`, `.xml`
-
-Acknowledgment
-HISA is a standalone fork of the original SMT (Slazanger's Map Tool). The original project and its contributors are acknowledged and credited.
