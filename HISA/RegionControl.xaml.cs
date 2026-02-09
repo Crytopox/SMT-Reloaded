@@ -2951,16 +2951,15 @@ namespace HISA
                 if(mapSystem.ActualSystem.HasIceBelt || mapSystem.ActualSystem.HasBlueA0Star)
                 {
                     string icons = "";
-                    // ?? // ?¤ ?
 
                     if(mapSystem.ActualSystem.HasBlueA0Star)
                     {
-                        icons += "?";
+                        icons += "A0 ";
                     }
 
                     if(mapSystem.ActualSystem.HasIceBelt)
                     {
-                        icons += "?";
+                        icons += "❄";
                     }
 
                     Label sysIcons = new Label();
