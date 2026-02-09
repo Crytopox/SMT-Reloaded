@@ -1253,19 +1253,19 @@ namespace HISA
             {
                 Name = "Default",
                 UserEditable = false,
-                FriendlyJumpBridgeColour = Color.FromRgb(255, 215, 0),
-                DisabledJumpBridgeColour = Color.FromRgb(255, 30, 30),
+                FriendlyJumpBridgeColour = Color.FromRgb(218, 165, 32),
+                DisabledJumpBridgeColour = Color.FromRgb(205, 55, 50),
                 SystemOutlineColour = Color.FromRgb(0, 0, 0),
-                InRegionSystemColour = Colors.SlateGray,
-                InRegionSystemTextColour = Colors.BlanchedAlmond,
+                InRegionSystemColour = Color.FromRgb(112, 128, 144),
+                InRegionSystemTextColour = Color.FromRgb(255, 235, 205),
                 OutRegionSystemColour = (Color)ColorConverter.ConvertFromString("#FF272B2F"),
                 OutRegionSystemTextColour = (Color)ColorConverter.ConvertFromString("#FF7E8184"),
 
-                UniverseSystemColour = Colors.SlateGray,
-                UniverseConstellationGateColour = Color.FromRgb(120, 255, 120),
-                UniverseSystemTextColour = Colors.BlanchedAlmond,
-                UniverseGateColour = Color.FromRgb(90, 220, 255),
-                UniverseRegionGateColour = Color.FromRgb(255, 110, 230),
+                UniverseSystemColour = Color.FromRgb(112, 128, 144),
+                UniverseConstellationGateColour = Color.FromRgb(112, 128, 144),
+                UniverseSystemTextColour = Color.FromRgb(255, 235, 205),
+                UniverseGateColour = Color.FromRgb(72, 61, 139),
+                UniverseRegionGateColour = Color.FromRgb(128, 64, 64),
                 UniverseMapBackgroundColour = Color.FromRgb(43, 43, 48),
 
                 PopupText = Color.FromRgb(0, 0, 0),
@@ -1279,12 +1279,12 @@ namespace HISA
                 IntelOverlayColour = Color.FromRgb(178, 34, 34),
                 IntelClearOverlayColour = Colors.Orange,
 
-                NormalGateColour = Color.FromRgb(90, 220, 255),
-                ConstellationGateColour = Color.FromRgb(120, 255, 120),
-                RegionGateColour = Color.FromRgb(255, 110, 230),
+                NormalGateColour = Color.FromRgb(72, 61, 139),
+                ConstellationGateColour = Color.FromRgb(112, 128, 144),
+                RegionGateColour = Color.FromRgb(128, 64, 64),
                 SelectedSystemColour = Color.FromRgb(255, 255, 255),
                 CharacterHighlightColour = Color.FromRgb(170, 130, 180),
-                CharacterOfflineTextColour = Colors.DarkGray,
+                CharacterOfflineTextColour = Color.FromRgb(169, 169, 169),
                 CharacterTextColour = Color.FromRgb(240, 190, 10),
                 CharacterTextSize = 11,
                 SystemTextSize = 12,
@@ -1294,7 +1294,7 @@ namespace HISA
 
                 JumpRangeInColour = Color.FromRgb(255, 165, 0),
                 JumpRangeInColourHighlight = Color.FromArgb(20, 82, 135, 125),
-                JumpRangeOverlapHighlight = Colors.DarkBlue,
+                JumpRangeOverlapHighlight = Color.FromRgb(0, 0, 139),
 
                 ActiveIncursionColour = Color.FromRgb(110, 82, 77),
 
@@ -1303,12 +1303,12 @@ namespace HISA
 
                 ConstellationHighlightColour = Color.FromRgb(147, 131, 131),
 
-                TheraEntranceRegion = Colors.YellowGreen,
-                TheraEntranceSystem = Colors.YellowGreen,
-                ThurnurEntranceRegion = Colors.OrangeRed,
-                ThurnurEntranceSystem = Colors.OrangeRed,
+                TheraEntranceRegion = Color.FromRgb(154, 205, 50),
+                TheraEntranceSystem = Color.FromRgb(154, 205, 50),
+                ThurnurEntranceRegion = Color.FromRgb(255, 69, 0),
+                ThurnurEntranceSystem = Color.FromRgb(255, 69, 0),
 
-                ZKillDataOverlay = Colors.Purple
+                ZKillDataOverlay = Color.FromRgb(128, 0, 128)
             };
 
             ActiveColourScheme = defaultColours;
