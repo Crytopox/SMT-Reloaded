@@ -17,9 +17,11 @@ namespace HISA
     {
         private List<UIElement> dynamicRegionsViewElements = new List<UIElement>();
         private List<UIElement> dynamicRegionsViewHighlightElements = new List<UIElement>();
+        private List<UIElement> persistentRegionsViewHighlightElements = new List<UIElement>();
 
         public MapConfig MapConf { get; set; }
         public EVEData.LocalCharacter ActiveCharacter { get; set; }
+        public string SelectedRegionName { get; private set; }
 
         private System.Windows.Threading.DispatcherTimer uiRefreshTimer;
 
@@ -73,7 +75,53 @@ namespace HISA
                 dynamicRegionsViewHighlightElements.Clear();
             }
 
+            foreach (UIElement uie in persistentRegionsViewHighlightElements)
+            {
+                MainUniverseCanvas.Children.Remove(uie);
+            }
+            persistentRegionsViewHighlightElements.Clear();
+
             AddDataToUniverse();
+            AddSelectedRegionHighlight();
+        }
+
+        public void SetSelectedRegion(string regionName)
+        {
+            if (string.Equals(SelectedRegionName, regionName, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            SelectedRegionName = regionName;
+            Redraw(false);
+        }
+
+        private void AddSelectedRegionHighlight()
+        {
+            if (string.IsNullOrWhiteSpace(SelectedRegionName))
+            {
+                return;
+            }
+
+            EVEData.MapRegion mr = EVEData.EveManager.Instance.GetRegion(SelectedRegionName);
+            if (mr == null)
+            {
+                return;
+            }
+
+            Rectangle regionShape = new Rectangle() { Height = 64, Width = 188 };
+            regionShape.Stroke = new SolidColorBrush(Colors.Gold);
+            regionShape.StrokeThickness = 4;
+            regionShape.StrokeLineJoin = PenLineJoin.Round;
+            regionShape.RadiusX = 12;
+            regionShape.RadiusY = 12;
+            regionShape.IsHitTestVisible = false;
+
+            Canvas.SetLeft(regionShape, mr.UniverseViewX - 94);
+            Canvas.SetTop(regionShape, mr.UniverseViewY - 32);
+            Canvas.SetZIndex(regionShape, 24);
+            MainUniverseCanvas.Children.Add(regionShape);
+            persistentRegionsViewHighlightElements.Add(regionShape);
         }
 
         private void RegionCharacter_ShapeMouseOverHandler(object sender, MouseEventArgs e)

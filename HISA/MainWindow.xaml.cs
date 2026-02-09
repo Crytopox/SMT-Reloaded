@@ -24,6 +24,7 @@ using NHotkey;
 using NHotkey.Wpf;
 using HISA.EVEData;
 using static HISA.EVEData.ZKillRedisQ;
+using AvalonDock.Layout;
 
 namespace HISA
 {
@@ -122,6 +123,7 @@ namespace HISA
             // Due to bugs in the Dock manager patch up the content id's for the 2 main views
             RegionLayoutDoc = FindDocWithContentID(dockManager.Layout, "MapRegionContentID");
             UniverseLayoutDoc = FindDocWithContentID(dockManager.Layout, "FullUniverseViewID");
+            RestoreLastDockSelection();
 
             // load any custom map settings off disk
             string mapConfigFileName = Path.Combine(EveAppConfig.StorageRoot, "MapConfig_" + MapConfig.SaveVersion + ".dat");
@@ -196,6 +198,8 @@ namespace HISA
             {
                 EVEManager.LoadFromDisk();
             }
+
+            ApplyLastRegionPreference();
 
             EVEManager.SetupIntelWatcher();
             EVEManager.SetupGameLogWatcher();
@@ -321,7 +325,11 @@ namespace HISA
             RegionUC.MapConf = MapConf;
             RegionUC.ANOMManager = ANOMManager;
             RegionUC.Init();
-            RegionUC.SelectRegion(MapConf.DefaultRegion);
+            string startupRegion = GetStartupRegionName();
+            if(!string.IsNullOrWhiteSpace(startupRegion))
+            {
+                RegionUC.SelectRegion(startupRegion);
+            }
 
             RegionUC.RegionChanged += RegionUC_RegionChanged;
             RegionUC.UniverseSystemSelect += RegionUC_UniverseSystemSelect;
@@ -336,6 +344,7 @@ namespace HISA
             RegionsViewUC.MapConf = MapConf;
             RegionsViewUC.Init();
             RegionsViewUC.RequestRegion += RegionsViewUC_RequestRegion;
+            RestoreRegionsViewSelection();
 
             AppStatusBar.DataContext = EVEManager.ServerInfo;
 
@@ -585,6 +594,112 @@ namespace HISA
         private AvalonDock.Layout.LayoutDocument RegionLayoutDoc { get; set; }
 
         private AvalonDock.Layout.LayoutDocument UniverseLayoutDoc { get; set; }
+        private const string DefaultDockContentId = "MapRegionContentID";
+
+        private void RestoreLastDockSelection()
+        {
+            try
+            {
+                string contentId = Properties.Settings.Default.LastDockContentId;
+                if(string.IsNullOrWhiteSpace(contentId))
+                {
+                    contentId = DefaultDockContentId;
+                }
+
+                AvalonDock.Layout.LayoutDocument doc = FindDocWithContentID(dockManager.Layout, contentId);
+                if(doc != null)
+                {
+                    doc.IsSelected = true;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private void SaveLastDockSelection()
+        {
+            try
+            {
+                var docs = dockManager.Layout?.Descendents().OfType<AvalonDock.Layout.LayoutDocument>();
+                AvalonDock.Layout.LayoutDocument selected = docs?.FirstOrDefault(d => d.IsSelected);
+                if(selected != null && !string.IsNullOrWhiteSpace(selected.ContentId))
+                {
+                    Properties.Settings.Default.LastDockContentId = selected.ContentId;
+                }
+                else
+                {
+                    Properties.Settings.Default.LastDockContentId = DefaultDockContentId;
+                }
+                Properties.Settings.Default.Save();
+            }
+            catch
+            {
+            }
+        }
+
+        private void RestoreRegionsViewSelection()
+        {
+            try
+            {
+                string regionName = GetStartupRegionName();
+                if(!string.IsNullOrWhiteSpace(regionName))
+                {
+                    RegionsViewUC?.SetSelectedRegion(regionName);
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private void SaveRegionsViewSelection(string regionName)
+        {
+            if(string.IsNullOrWhiteSpace(regionName))
+            {
+                return;
+            }
+
+            try
+            {
+                Properties.Settings.Default.LastRegionsViewRegion = regionName;
+                Properties.Settings.Default.Save();
+            }
+            catch
+            {
+            }
+        }
+
+        private void ApplyLastRegionPreference()
+        {
+            try
+            {
+                string startupRegion = GetStartupRegionName();
+                if(!string.IsNullOrWhiteSpace(startupRegion))
+                {
+                    MapConf.DefaultRegion = startupRegion;
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private string GetStartupRegionName()
+        {
+            string lastRegion = Properties.Settings.Default.LastRegionsViewRegion;
+            if(!string.IsNullOrWhiteSpace(lastRegion) && EVEManager?.GetRegion(lastRegion) != null)
+            {
+                return lastRegion;
+            }
+
+            if(!string.IsNullOrWhiteSpace(MapConf?.DefaultRegion) && EVEManager?.GetRegion(MapConf.DefaultRegion) != null)
+            {
+                return MapConf.DefaultRegion;
+            }
+
+            return EVEManager?.Regions?.FirstOrDefault()?.Name;
+        }
 
         private void ActiveSovCampaigns_CollectionChanged()
         {
@@ -659,6 +774,12 @@ namespace HISA
 
         private void MainWindow_Closed(object sender, EventArgs e)
         {
+            SaveLastDockSelection();
+            if(RegionUC?.Region != null && !string.IsNullOrWhiteSpace(RegionUC.Region.Name))
+            {
+                SaveRegionsViewSelection(RegionUC.Region.Name);
+            }
+
             // save off the dockmanager layout
             string dockManagerLayoutName = Path.Combine(EveAppConfig.StorageRoot, "Layout_" + WindowLayoutVersion + ".dat");
 
@@ -678,6 +799,10 @@ namespace HISA
             {
                 // Save off any explicit items
                 MapConf.UseESIForCharacterPositions = EVEManager.UseESIForCharacterPositions;
+                if(RegionUC?.Region != null && !string.IsNullOrWhiteSpace(RegionUC.Region.Name))
+                {
+                    MapConf.DefaultRegion = RegionUC.Region.Name;
+                }
 
                 // Save the Map Colours
                 string mapConfigFileName = Path.Combine(EveAppConfig.StorageRoot, "MapConfig_" + MapConfig.SaveVersion + ".dat");
@@ -847,6 +972,8 @@ namespace HISA
             string regionName = e.OriginalSource as string;
             RegionUC.FollowCharacter = false;
             RegionUC.SelectRegion(regionName);
+            SaveRegionsViewSelection(regionName);
+            RegionsViewUC?.SetSelectedRegion(regionName);
 
             if(RegionLayoutDoc != null)
             {
@@ -922,6 +1049,12 @@ namespace HISA
             if(SovCampaignList != null && SovCampaignList.ItemsSource != null)
             {
                 CollectionViewSource.GetDefaultView(SovCampaignList.ItemsSource).Refresh();
+            }
+
+            if(RegionUC?.Region != null && !string.IsNullOrWhiteSpace(RegionUC.Region.Name))
+            {
+                SaveRegionsViewSelection(RegionUC.Region.Name);
+                RegionsViewUC?.SetSelectedRegion(RegionUC.Region.Name);
             }
         }
 

@@ -46,6 +46,30 @@ namespace HISA.Properties {
                 this["OverlayWindow_placement"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string LastDockContentId {
+            get {
+                return ((string)(this["LastDockContentId"]));
+            }
+            set {
+                this["LastDockContentId"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string LastRegionsViewRegion {
+            get {
+                return ((string)(this["LastRegionsViewRegion"]));
+            }
+            set {
+                this["LastRegionsViewRegion"] = value;
+            }
+        }
     }
 }
 
