@@ -1261,7 +1261,11 @@ namespace HISA
             // check we havent selected the same system
             if(Region != null && Region.Name == regionName)
             {
-                return;
+                MapRegion latest = EM?.GetRegion(regionName);
+                if(ReferenceEquals(latest, Region))
+                {
+                    return;
+                }
             }
 
             FollowCharacter = false;
@@ -1279,6 +1283,12 @@ namespace HISA
             if(mr == null)
             {
                 return;
+            }
+
+            // Older custom region files may be missing cached cell points; rebuild on demand.
+            if(mr.MapSystems != null && mr.MapSystems.Values.Any(ms => ms.CellPoints == null || ms.CellPoints.Count < 3))
+            {
+                EM.RebuildRegionCells(mr);
             }
 
             // update the selected region

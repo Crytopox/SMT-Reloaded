@@ -3,6 +3,7 @@
 //-----------------------------------------------------------------------
 
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Net;
@@ -2096,7 +2097,7 @@ namespace HISA.EVEData
 
             if(imported > 0)
             {
-                LoadCustomRegions();
+                LoadCustomRegionsFromDiskAndApply();
             }
 
             return imported;
@@ -2447,49 +2448,57 @@ namespace HISA.EVEData
             }
         }
 
-        private void LoadCustomRegions()
+        private static bool RegionNeedsCellRebuild(MapRegion region)
+        {
+            if(region?.MapSystems == null || region.MapSystems.Count == 0)
+            {
+                return false;
+            }
+
+            foreach(MapSystem ms in region.MapSystems.Values)
+            {
+                if(ms.CellPoints == null || ms.CellPoints.Count < 3)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private List<MapRegion> ReadCustomRegionsFromDisk()
         {
             string folder = GetCustomRegionsFolder();
             if(!Directory.Exists(folder))
             {
-                return;
+                return new List<MapRegion>();
             }
 
+            Dictionary<string, MapRegion> customByName = new Dictionary<string, MapRegion>(StringComparer.Ordinal);
             foreach(string file in Directory.GetFiles(folder, "*.region.xml", SearchOption.TopDirectoryOnly))
             {
                 MapRegion region = Serialization.DeserializeFromDisk<MapRegion>(file);
-                if(region == null || string.IsNullOrWhiteSpace(region.Name))
+                if(region == null || string.IsNullOrWhiteSpace(region.Name) || region.MapSystems == null)
                 {
                     continue;
                 }
 
                 region.IsCustom = true;
                 region.GroupName = "Custom Regions";
-                if(!region.AllowEdit)
-                {
-                    region.AllowEdit = false;
-                }
 
                 foreach(MapSystem ms in region.MapSystems.Values)
                 {
                     ms.ActualSystem = GetEveSystem(ms.Name);
-                    if(ms.ActualSystem != null)
+                    if(ms.ActualSystem != null && (string.IsNullOrWhiteSpace(ms.Region) || ms.Region == region.Name))
                     {
-                        if(string.IsNullOrWhiteSpace(ms.Region) || ms.Region == region.Name)
-                        {
-                            ms.Region = ms.ActualSystem.Region;
-                        }
+                        ms.Region = ms.ActualSystem.Region;
                     }
                 }
 
-                MapRegion existing = GetRegion(region.Name);
-                if(existing != null)
-                {
-                    Regions.Remove(existing);
-                }
-                Regions.Add(region);
-                RebuildRegionVoronoiCells(region);
+                customByName[region.Name] = region;
             }
+
+            return customByName.Values.ToList();
         }
 
         public void AutoArrangeRegionLayout(string regionName, int iterations = 260, float strength = 1.2f)
@@ -2504,15 +2513,21 @@ namespace HISA.EVEData
             RebuildRegionVoronoiCells(region);
         }
 
-        private void ApplyLayoutOverrides()
+        private HashSet<string> ApplyLayoutOverrides(IEnumerable<MapRegion> regionSet)
         {
-            if(Regions == null || Regions.Count == 0)
+            HashSet<string> changedRegions = new HashSet<string>(StringComparer.Ordinal);
+            if(regionSet == null)
             {
-                return;
+                return changedRegions;
             }
 
-            foreach(MapRegion region in Regions)
+            foreach(MapRegion region in regionSet)
             {
+                if(region == null || region.MapSystems == null || region.MapSystems.Count == 0)
+                {
+                    continue;
+                }
+
                 string overrideFile = GetLayoutOverrideFileName(region.Name, region.IsCustom);
                 if(!File.Exists(overrideFile))
                 {
@@ -2520,21 +2535,28 @@ namespace HISA.EVEData
                 }
 
                 RegionLayoutOverrides overrides = Serialization.DeserializeFromDisk<RegionLayoutOverrides>(overrideFile);
-                if(overrides?.Positions == null)
+                if(overrides?.Positions == null || overrides.Positions.Count == 0)
                 {
                     continue;
                 }
 
+                bool changed = false;
                 foreach(KeyValuePair<string, Vector2> kvp in overrides.Positions)
                 {
-                    if(region.MapSystems.ContainsKey(kvp.Key))
+                    if(region.MapSystems.TryGetValue(kvp.Key, out MapSystem mapSystem) && mapSystem.Layout != kvp.Value)
                     {
-                        region.MapSystems[kvp.Key].Layout = kvp.Value;
+                        mapSystem.Layout = kvp.Value;
+                        changed = true;
                     }
                 }
 
-                RebuildRegionVoronoiCells(region);
+                if(changed)
+                {
+                    changedRegions.Add(region.Name);
+                }
             }
+
+            return changedRegions;
         }
 
         private void EnsureCustomRegionDefaults()
@@ -2550,8 +2572,6 @@ namespace HISA.EVEData
                 gsf.IsCustom = true;
                 gsf.GroupName = "Custom Regions";
                 gsf.AllowEdit = true;
-
-                RebuildRegionVoronoiCells(gsf);
                 SaveCustomRegion(gsf);
             }
         }
@@ -2598,6 +2618,148 @@ namespace HISA.EVEData
                     File.Copy(legacyFile, targetFile, overwrite: false);
                 }
             }
+        }
+
+        private void MigrateCustomLayoutOverrides(IEnumerable<MapRegion> customRegions)
+        {
+            if(customRegions == null)
+            {
+                return;
+            }
+
+            string projectRoot = TryGetProjectRoot();
+            if(string.IsNullOrEmpty(projectRoot))
+            {
+                return;
+            }
+
+            string legacyFolder = Path.Combine(projectRoot, "EVEData", "data", "LayoutOverrides");
+            if(!Directory.Exists(legacyFolder))
+            {
+                return;
+            }
+
+            string customFolder = Path.Combine(EveAppConfig.VersionStorage, "CustomRegions", "LayoutOverrides");
+            Directory.CreateDirectory(customFolder);
+
+            foreach(MapRegion region in customRegions)
+            {
+                if(region == null || !region.IsCustom)
+                {
+                    continue;
+                }
+
+                string safeName = SanitizeFileName(region.Name);
+                string legacyFile = Path.Combine(legacyFolder, $"MapLayoutOverrides_{safeName}.dat");
+                if(!File.Exists(legacyFile))
+                {
+                    continue;
+                }
+
+                string targetFile = Path.Combine(customFolder, $"MapLayoutOverrides_{safeName}.dat");
+                if(!File.Exists(targetFile))
+                {
+                    File.Copy(legacyFile, targetFile, overwrite: false);
+                }
+            }
+        }
+
+        private void RebuildCellsForRegions(IEnumerable<MapRegion> regionSet)
+        {
+            if(regionSet == null)
+            {
+                return;
+            }
+
+            foreach(MapRegion region in regionSet)
+            {
+                if(region != null)
+                {
+                    RebuildRegionVoronoiCells(region);
+                }
+            }
+        }
+
+        public List<MapRegion> LoadCustomRegionsSnapshotFromDisk()
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            Stopwatch phase = Stopwatch.StartNew();
+            List<MapRegion> customRegions = ReadCustomRegionsFromDisk();
+            phase.Stop();
+            Trace.WriteLine($"[StartupTiming] Custom deserialize: {phase.ElapsedMilliseconds} ms");
+
+            phase.Restart();
+            MigrateCustomLayoutOverrides(customRegions);
+            phase.Stop();
+            Trace.WriteLine($"[StartupTiming] Custom override migration: {phase.ElapsedMilliseconds} ms");
+
+            HashSet<string> regionsNeedingCellRebuild = new HashSet<string>(StringComparer.Ordinal);
+            foreach(MapRegion region in customRegions)
+            {
+                if(RegionNeedsCellRebuild(region))
+                {
+                    regionsNeedingCellRebuild.Add(region.Name);
+                }
+            }
+
+            phase.Restart();
+            regionsNeedingCellRebuild.UnionWith(ApplyLayoutOverrides(customRegions));
+            phase.Stop();
+            Trace.WriteLine($"[StartupTiming] Custom apply overrides: {phase.ElapsedMilliseconds} ms");
+
+            if(regionsNeedingCellRebuild.Count > 0)
+            {
+                phase.Restart();
+                RebuildCellsForRegions(customRegions.Where(r => r != null && regionsNeedingCellRebuild.Contains(r.Name)));
+                phase.Stop();
+                Trace.WriteLine($"[StartupTiming] Custom cell rebuild: {phase.ElapsedMilliseconds} ms");
+            }
+
+            sw.Stop();
+            Trace.WriteLine($"[StartupTiming] Custom region snapshot: {customRegions.Count} regions in {sw.ElapsedMilliseconds} ms");
+            return customRegions;
+        }
+
+        public void ApplyCustomRegionSnapshot(IEnumerable<MapRegion> customRegions)
+        {
+            List<MapRegion> customList = customRegions?.Where(r => r != null).ToList() ?? new List<MapRegion>();
+            List<MapRegion> merged = Regions?.Where(r => r != null).ToList() ?? new List<MapRegion>();
+            Dictionary<string, int> regionIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+            for(int i = 0; i < merged.Count; i++)
+            {
+                regionIndex[merged[i].Name] = i;
+            }
+
+            foreach(MapRegion customRegion in customList)
+            {
+                customRegion.IsCustom = true;
+                customRegion.GroupName = "Custom Regions";
+
+                if(regionIndex.TryGetValue(customRegion.Name, out int index))
+                {
+                    merged[index] = customRegion;
+                }
+                else
+                {
+                    regionIndex[customRegion.Name] = merged.Count;
+                    merged.Add(customRegion);
+                }
+            }
+
+            Regions = merged;
+            foreach(MapRegion region in Regions)
+            {
+                if(region != null && !region.IsCustom)
+                {
+                    region.GroupName = "Regions";
+                }
+            }
+        }
+
+        public void LoadCustomRegionsFromDiskAndApply()
+        {
+            List<MapRegion> customRegions = LoadCustomRegionsSnapshotFromDisk();
+            ApplyCustomRegionSnapshot(customRegions);
         }
 
         private string GetLayoutOverrideFileName(string regionName, bool isCustom)
@@ -3159,30 +3321,67 @@ namespace HISA.EVEData
         /// </summary>
         public void LoadFromDisk()
         {
-            SystemIDToName = new SerializableDictionary<long, string>();
+            Stopwatch sw = Stopwatch.StartNew();
+            LoadBaseDataFromDisk();
+            LoadCustomRegionsFromDiskAndApply();
+            sw.Stop();
+            Trace.WriteLine($"[StartupTiming] Total data load: {sw.ElapsedMilliseconds} ms");
+        }
 
+        public void LoadBaseDataFromDisk()
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            Stopwatch phase = Stopwatch.StartNew();
+
+            SystemIDToName = new SerializableDictionary<long, string>();
             Regions = Serialization.DeserializeFromDisk<List<MapRegion>>(Path.Combine(DataRootFolder, "MapLayout.dat"));
             Systems = Serialization.DeserializeFromDisk<List<System>>(Path.Combine(DataRootFolder, "Systems.dat"));
-
             ShipTypes = Serialization.DeserializeFromDisk<SerializableDictionary<string, string>>(Path.Combine(DataRootFolder, "ShipTypes.dat"));
+            phase.Stop();
+            Trace.WriteLine($"[StartupTiming] Base deserialize: {phase.ElapsedMilliseconds} ms");
+
+            if(Regions == null)
+            {
+                Regions = new List<MapRegion>();
+            }
+
+            if(Systems == null)
+            {
+                Systems = new List<System>();
+            }
 
             foreach(System s in Systems)
             {
                 SystemIDToName[s.ID] = s.Name;
             }
 
-            EnsureCustomRegionDefaults();
-            LoadCustomRegions();
-            MigrateCustomLayoutOverrides();
-            ApplyLayoutOverrides();
-
             foreach(MapRegion r in Regions)
             {
-                if(!r.IsCustom)
+                if(r != null && !r.IsCustom)
                 {
                     r.GroupName = "Regions";
                 }
             }
+
+            HashSet<string> regionsNeedingCellRebuild = new HashSet<string>(StringComparer.Ordinal);
+            foreach(MapRegion region in Regions.Where(r => r != null && !r.IsCustom))
+            {
+                if(RegionNeedsCellRebuild(region))
+                {
+                    regionsNeedingCellRebuild.Add(region.Name);
+                }
+            }
+
+            phase.Restart();
+            regionsNeedingCellRebuild.UnionWith(ApplyLayoutOverrides(Regions.Where(r => r != null && !r.IsCustom)));
+            if(regionsNeedingCellRebuild.Count > 0)
+            {
+                RebuildCellsForRegions(Regions.Where(r => r != null && regionsNeedingCellRebuild.Contains(r.Name)));
+            }
+            phase.Stop();
+            Trace.WriteLine($"[StartupTiming] Base overrides + cell rebuild: {phase.ElapsedMilliseconds} ms");
+
+            EnsureCustomRegionDefaults();
 
             CharacterIDToName = new SerializableDictionary<int, string>();
             AllianceIDToName = new SerializableDictionary<int, string>();
@@ -3197,24 +3396,30 @@ namespace HISA.EVEData
 
             // now add the beacons
             string cynoBeaconsFile = Path.Combine(SaveDataRootFolder, "CynoBeacons.txt");
+            phase.Restart();
             if(File.Exists(cynoBeaconsFile))
             {
-                StreamReader file = new StreamReader(cynoBeaconsFile);
-
-                string line;
-                while((line = file.ReadLine()) != null)
+                using(StreamReader file = new StreamReader(cynoBeaconsFile))
                 {
-                    string system = line.Trim();
-
-                    System s = GetEveSystem(system);
-                    if(s != null)
+                    string line;
+                    while((line = file.ReadLine()) != null)
                     {
-                        s.HasJumpBeacon = true;
+                        string system = line.Trim();
+
+                        System s = GetEveSystem(system);
+                        if(s != null)
+                        {
+                            s.HasJumpBeacon = true;
+                        }
                     }
                 }
             }
+            phase.Stop();
+            Trace.WriteLine($"[StartupTiming] Base cyno beacons: {phase.ElapsedMilliseconds} ms");
 
             Init();
+            sw.Stop();
+            Trace.WriteLine($"[StartupTiming] Base data load: {sw.ElapsedMilliseconds} ms");
         }
 
         /// <summary>

@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -199,7 +200,10 @@ namespace HISA
             }
             else
             {
-                EVEManager.LoadFromDisk();
+                Stopwatch startupDataLoad = Stopwatch.StartNew();
+                EVEManager.LoadBaseDataFromDisk();
+                startupDataLoad.Stop();
+                Debug.WriteLine($"[StartupTiming] MainWindow base load call: {startupDataLoad.ElapsedMilliseconds} ms");
             }
 
             ApplyLastRegionPreference();
@@ -348,6 +352,7 @@ namespace HISA
             RegionsViewUC.Init();
             RegionsViewUC.RequestRegion += RegionsViewUC_RequestRegion;
             RestoreRegionsViewSelection();
+            StartCustomRegionLoadAsync();
 
             AppStatusBar.DataContext = EVEManager.ServerInfo;
 
@@ -702,6 +707,39 @@ namespace HISA
             }
 
             return EVEManager?.Regions?.FirstOrDefault()?.Name;
+        }
+
+        private async void StartCustomRegionLoadAsync()
+        {
+            try
+            {
+                Stopwatch sw = Stopwatch.StartNew();
+                List<MapRegion> customSnapshot = await Task.Run(() => EVEManager.LoadCustomRegionsSnapshotFromDisk());
+
+                EVEManager.ApplyCustomRegionSnapshot(customSnapshot);
+
+                RegionUC?.RefreshRegionList();
+                RegionsViewUC?.Redraw(true);
+                UniverseUC?.ReDrawMap(true, true, false);
+
+                if(RegionUC?.Region != null)
+                {
+                    RegionUC.SelectRegion(RegionUC.Region.Name);
+                }
+
+                string startupRegion = GetStartupRegionName();
+                if(!string.IsNullOrWhiteSpace(startupRegion) && RegionUC?.Region?.Name != startupRegion && EVEManager.GetRegion(startupRegion) != null)
+                {
+                    RegionUC.SelectRegion(startupRegion);
+                }
+
+                sw.Stop();
+                Debug.WriteLine($"[StartupTiming] Async custom region load + apply: {sw.ElapsedMilliseconds} ms");
+            }
+            catch(Exception ex)
+            {
+                Debug.WriteLine($"[StartupTiming] Async custom region load failed: {ex.Message}");
+            }
         }
 
         private void ActiveSovCampaigns_CollectionChanged()
