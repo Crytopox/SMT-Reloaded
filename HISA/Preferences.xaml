@@ -7,17 +7,139 @@
         xmlns:local="clr-namespace:HISA"
         mc:Ignorable="d"
         Name="PrefsWindow"
-        Title="Preferences" SizeToContent="WidthAndHeight" WindowStartupLocation="CenterOwner" ResizeMode="NoResize" Loaded="Window_Loaded">
+        Title="Preferences" Height="760" Width="940" MinHeight="700" MinWidth="860" WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip" Loaded="Window_Loaded" Background="{DynamicResource UiBackgroundBrush}" Style="{StaticResource ModernWindowStyle}">
     <Window.Resources>
         <local:JoinStringConverter  x:Key="stringJoiner" />
         <local:NegateBooleanConverter x:Key="NegateBooleanConverter" />
+        <SolidColorBrush x:Key="PrefsAccentBrush" Color="#4F87BF" />
+        <SolidColorBrush x:Key="PrefsAccentSoftBrush" Color="#2D4969" />
+        <SolidColorBrush x:Key="PrefsTabIdleBrush" Color="#1A2A3F" />
+        <SolidColorBrush x:Key="PrefsTabHoverBrush" Color="#243B56" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#3A5D84" />
+        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#EAF4FF" />
+
+        <Style TargetType="Label">
+            <Setter Property="Foreground" Value="{DynamicResource UiTextMutedBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,2,0,2" />
+        </Style>
+
+        <Style TargetType="TextBox" BasedOn="{StaticResource ModernTextBoxStyle}" />
+        <Style TargetType="ComboBox" BasedOn="{StaticResource ComboInputStyle}" />
+        <Style TargetType="CheckBox" BasedOn="{StaticResource ModernCheckBoxStyle}" />
+        <Style TargetType="Button" BasedOn="{StaticResource GhostButtonStyle}" />
+
+        <Style TargetType="GroupBox">
+            <Setter Property="Foreground" Value="{DynamicResource UiTextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource UiStrokeSoftBrush}" />
+            <Setter Property="Background" Value="{DynamicResource UiSurfaceAltBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8" />
+        </Style>
+
+        <Style TargetType="{x:Type xctk:IntegerUpDown}">
+            <Setter Property="Background" Value="{DynamicResource UiSurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource UiTextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource UiStrokeSoftBrush}" />
+        </Style>
+
+        <Style TargetType="{x:Type xctk:DoubleUpDown}">
+            <Setter Property="Background" Value="{DynamicResource UiSurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource UiTextPrimaryBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource UiStrokeSoftBrush}" />
+        </Style>
+
+        <Style TargetType="Slider">
+            <Setter Property="Foreground" Value="{DynamicResource UiGoldBrush}" />
+            <Setter Property="Margin" Value="0,2" />
+        </Style>
+
+        <Style x:Key="PreferencesSectionBorderStyle" TargetType="Border" BasedOn="{StaticResource CardBorderStyle}">
+            <Setter Property="Margin" Value="6" />
+            <Setter Property="Padding" Value="6" />
+        </Style>
+
+        <Style x:Key="PreferencesTabItemStyle" TargetType="TabItem">
+            <Setter Property="Background" Value="{StaticResource PrefsTabIdleBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource UiStrokeSoftBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource UiTextMutedBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="12,6" />
+            <Setter Property="Margin" Value="0,0,6,0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6,6,0,0"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              ContentSource="Header" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource PrefsAccentSoftBrush}" />
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource PrefsAccentBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource UiTextPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource PrefsTabHoverBrush}" />
+                                <Setter TargetName="TabBorder" Property="BorderBrush" Value="{DynamicResource UiStrokeBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource UiTextPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="TabBorder" Property="Opacity" Value="0.45" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PreferencesTabControlStyle" TargetType="TabControl">
+            <Setter Property="Background" Value="{DynamicResource UiSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource UiStrokeSoftBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="6" />
+            <Setter Property="ItemContainerStyle" Value="{StaticResource PreferencesTabItemStyle}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid ClipToBounds="True">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <TabPanel Grid.Row="0"
+                                      Margin="0,0,0,8"
+                                      IsItemsHost="True"
+                                      Background="Transparent" />
+
+                            <Border Grid.Row="1"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="8">
+                                <ContentPresenter ContentSource="SelectedContent" />
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
-    <Grid Background="{DynamicResource ButtonBorder}" HorizontalAlignment="Stretch" VerticalAlignment="Top">
-        <DockPanel>
-            <TabControl x:Name="tabControl" DockPanel.Dock="Top">
+    <Grid Background="{DynamicResource UiBackgroundBrush}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+        <DockPanel Margin="12">
+            <TabControl x:Name="tabControl" DockPanel.Dock="Top" Style="{StaticResource PreferencesTabControlStyle}">
                 <TabItem Header="General">
-                    <Grid Height="500" Width="600">
+                    <Grid Margin="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="50*" />
                             <ColumnDefinition Width="50*" />
@@ -25,15 +147,15 @@
 
                         <StackPanel Grid.Column="0" Grid.ColumnSpan="1">
                             <StackPanel>
-                                <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                    <GroupBox Margin="4" Height="Auto">
+                                <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                    <GroupBox Margin="4">
                                         <StackPanel>
-                                            <CheckBox IsChecked="{Binding Path=AlwaysOnTop}" Margin="0,3" Content="Always on top" />
-                                            <CheckBox IsChecked="{Binding Path=SyncActiveCharacterBasedOnActiveEVEClient}" Margin="0,3">Auto sync character to active window</CheckBox>
-                                            <CheckBox x:Name="syncESIPositionChk" Margin="0,3" Checked="syncESIPositionChk_Checked" Unchecked="syncESIPositionChk_Checked">Use ESI for character positions</CheckBox>
-                                            <CheckBox IsChecked="{Binding Path=DrawRoute}" Margin="0,3" Content="Draw Route" />
-                                            <CheckBox IsChecked="{Binding MinimizeToTray}" Margin="0,3" Content="Minimize to tray" />
-                                            <CheckBox IsChecked="{Binding CloseToTray}" Margin="0,3" Content="Close to tray">
+                                            <CheckBox IsChecked="{Binding Path=AlwaysOnTop}" Margin="0,2" Content="Always on top" />
+                                            <CheckBox IsChecked="{Binding Path=SyncActiveCharacterBasedOnActiveEVEClient}" Margin="0,2">Auto sync character to active window</CheckBox>
+                                            <CheckBox x:Name="syncESIPositionChk" Margin="0,2" Checked="syncESIPositionChk_Checked" Unchecked="syncESIPositionChk_Checked">Use ESI for character positions</CheckBox>
+                                            <CheckBox IsChecked="{Binding Path=DrawRoute}" Margin="0,2" Content="Draw Route" />
+                                            <CheckBox IsChecked="{Binding MinimizeToTray}" Margin="0,2" Content="Minimize to tray" />
+                                            <CheckBox IsChecked="{Binding CloseToTray}" Margin="0,2" Content="Close to tray">
                                                 <CheckBox.IsEnabled>
                                                     <Binding Path="MinimizeToTray" Converter="{StaticResource NegateBooleanConverter}" />
                                                 </CheckBox.IsEnabled>
@@ -41,7 +163,7 @@
                                         </StackPanel>
                                     </GroupBox>
                                 </Border>
-                                <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                                <Border Style="{StaticResource PreferencesSectionBorderStyle}">
                                     <GroupBox Header="Logs (changing these requires a restart)" Margin="4" Height="125">
                                         <StackPanel>
                                             <Label Content="Current Log Folder : " />
@@ -56,17 +178,17 @@
                         </StackPanel>
 
                         <StackPanel Grid.Column="1">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Header="Performance" Margin="4" Height="Auto">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                <GroupBox Header="Performance" Margin="4">
                                     <StackPanel>
-                                        <CheckBox IsChecked="{Binding Path=DisableJumpBridgesPathAnimation}" Margin="0,3">Disable jump bridges path animation</CheckBox>
-                                        <CheckBox IsChecked="{Binding Path=DisableRoutePathAnimation}" Margin="0,3">Disable route path animation</CheckBox>
+                                        <CheckBox IsChecked="{Binding Path=DisableJumpBridgesPathAnimation}" Margin="0,2">Disable jump bridges path animation</CheckBox>
+                                        <CheckBox IsChecked="{Binding Path=DisableRoutePathAnimation}" Margin="0,2">Disable route path animation</CheckBox>
                                     </StackPanel>
                                 </GroupBox>
                             </Border>
 
-                            <Border  BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Header="Debug" Margin="4" Height="auto">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                <GroupBox Header="Debug" Margin="4">
                                     <StackPanel>
                                         <CheckBox IsChecked="{Binding Path=Debug_EnableMapEdit}" Margin="0,2">Enable Universe Map Edits</CheckBox>
                                     </StackPanel>
@@ -76,59 +198,63 @@
                     </Grid>
                 </TabItem>
                 <TabItem Header="Region" HorizontalAlignment="Left">
-                    <Grid Height="500" Width="600">
+                    <Grid Margin="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="50*" />
                             <ColumnDefinition Width="50*" />
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0">
-                            <GroupBox  Margin="4" Height="Auto">
-                                <StackPanel>
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowActiveIncursions}" Content="Show Active Incursions" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowJoveObservatories}" Content="Show Jove Observatories" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowToolBox}" Content="Show Toolbox" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowTrueSec}" Content="Show TrueSec" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowSystemPopup}" Content="Show System Popups" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowZKillData}" Content="Show ZKill Data" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowNegativeRattingDelta}" Content="Show Negative Ratting Delta" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowRattingDataAsDelta}" Content="Show Ratting Data as Delta" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowSimpleSecurityView}" Content="Show Simple Security View (Just HS/LS/null)" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowTrigInvasions}" Content="Show Trig Invasions" />
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                <GroupBox  Margin="4">
+                                    <StackPanel>
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowActiveIncursions}" Content="Show Active Incursions" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowJoveObservatories}" Content="Show Jove Observatories" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowToolBox}" Content="Show Toolbox" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowTrueSec}" Content="Show TrueSec" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowSystemPopup}" Content="Show System Popups" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowZKillData}" Content="Show ZKill Data" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowNegativeRattingDelta}" Content="Show Negative Ratting Delta" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowRattingDataAsDelta}" Content="Show Ratting Data as Delta" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowSimpleSecurityView}" Content="Show Simple Security View (Just HS/LS/null)" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowTrigInvasions}" Content="Show Trig Invasions" />
 
-                                    <StackPanel Orientation="Horizontal" Margin="0,0">
-                                        <xctk:IntegerUpDown Margin="1,3" Value="{Binding Path=MaxESIOverlayValue}" Minimum="30" Maximum="300" Width="60"  Foreground="White" />
-                                        <Label>Maximum Overlay Size</Label>
+                                        <StackPanel Orientation="Horizontal" Margin="0,1">
+                                            <xctk:IntegerUpDown Margin="1,3" Value="{Binding Path=MaxESIOverlayValue}" Minimum="30" Maximum="300" Width="60"  Foreground="{DynamicResource UiTextPrimaryBrush}" />
+                                            <Label>Maximum Overlay Size</Label>
+                                        </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
-                            </GroupBox>
+                                </GroupBox>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1">
-                            <GroupBox Margin="4" Height="Auto">
-                                <StackPanel>
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowCompactCharactersOnMap}" Content="Compact Character Mode" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ShowOfflineCharactersOnMap}" Content="Show Offline Characters" />
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                <GroupBox Margin="4">
+                                    <StackPanel>
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowCompactCharactersOnMap}" Content="Compact Character Mode" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ShowOfflineCharactersOnMap}" Content="Show Offline Characters" />
 
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=LimitESIDataToRegion}" Content="Limit data overlay to in-region only" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=FollowOnZoom}" Content="Follow Selected System when Zoomed" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ResetZoomOnRegionChange}" Content="Reset the zoom level on region change" />
-                                    <CheckBox Margin="0,3" IsChecked="{Binding Path=ClampMaxESIOverlayValue}" Content="Clamp overlay Data to Maximum" />
-                                </StackPanel>
-                            </GroupBox>
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=LimitESIDataToRegion}" Content="Limit data overlay to in-region only" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=FollowOnZoom}" Content="Follow Selected System when Zoomed" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ResetZoomOnRegionChange}" Content="Reset the zoom level on region change" />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=ClampMaxESIOverlayValue}" Content="Clamp overlay Data to Maximum" />
+                                    </StackPanel>
+                                </GroupBox>
+                            </Border>
                         </StackPanel>
                     </Grid>
                 </TabItem>
 
                 <TabItem Header="Intel">
-                    <Grid Height="500" Width="600">
+                    <Grid Margin="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="50*" />
                             <ColumnDefinition Width="50*" />
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0" Grid.ColumnSpan="1" Margin="1">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
                                 <GroupBox Header="General" Margin="4">
                                     <StackPanel>
 
@@ -143,23 +269,23 @@
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=IntelTextSize}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="8" Maximum="20" Background="Transparent"  Foreground="White" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=IntelTextSize}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="8" Maximum="20"  />
                                             <Label Content="Intel Text Size" />
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=MaxIntelSeconds}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="30" Maximum="1200" Background="Transparent"  Foreground="White" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=MaxIntelSeconds}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="30" Maximum="1200"  />
                                             <Label Content="Intel Max Time (s)" />
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=ZkillExpireTimeMinutes}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="120" Background="Transparent"  Foreground="White" ValueChanged="zkilltime_ValueChanged" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=ZkillExpireTimeMinutes}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="120"  ValueChanged="zkilltime_ValueChanged" />
                                             <Label Content="Zkill Max Time (minutes)" />
                                         </StackPanel>
                                     </StackPanel>
                                 </GroupBox>
                             </Border>
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
                                 <GroupBox Header="DangerZone" Margin="4">
                                     <StackPanel>
                                         <CheckBox IsChecked="{Binding Path=ShowDangerZone}" Margin="0,2">Show Dangerzone</CheckBox>
@@ -179,18 +305,18 @@
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Grid.ColumnSpan="2">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
                                 <GroupBox Margin="4">
 
                                     <StackPanel Orientation="Vertical">
                                         <Label Content="Channels to monitor (Partial text match, one per line)" />
-                                        <TextBox Width="271" Height="100" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
+                                        <TextBox MinHeight="100" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
                                         <Label Content="Clear Filters (will change alert to warning)" />
-                                        <TextBox Width="271"  Height="80" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelClearFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
+                                        <TextBox MinHeight="80" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelClearFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
                                         <Label Content="Ignore Filters (Text to ignore)" />
-                                        <TextBox Width="271"  Height="80" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelIgnoreFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
+                                        <TextBox MinHeight="80" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelIgnoreFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
                                         <Label Content="Alert Filters (Text to always alert)" />
-                                        <TextBox Width="271"  Height="80" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelAlertFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
+                                        <TextBox MinHeight="80" Text="{Binding RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}, Path=EM.IntelAlertFilters, Converter={StaticResource stringJoiner}, Mode=TwoWay}"  TextWrapping="Wrap" AcceptsReturn="True" />
                                     </StackPanel>
                                 </GroupBox>
                             </Border>
@@ -199,52 +325,52 @@
                 </TabItem>
 
                 <TabItem Header="Misc">
-                    <Grid Height="500" Width="600">
+                    <Grid Margin="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="50*" />
                             <ColumnDefinition Width="50*" />
                         </Grid.ColumnDefinitions>
 
                         <StackPanel Grid.Column="0">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
 
-                                <GroupBox Header="Fleet" Margin="4" Height="auto">
+                                <GroupBox Header="Fleet" Margin="4">
                                     <StackPanel>
                                         <CheckBox IsChecked="{Binding Path=FleetShowOnMap}" Margin="0,2">Show Fleet Members</CheckBox>
                                         <CheckBox IsChecked="{Binding Path=FleetShowShipType}" Margin="0,2">Show Fleet Member Ship Type</CheckBox>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=FleetMaxMembersPerSystem}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="1" Maximum="30" Background="Transparent"  Foreground="White" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=FleetMaxMembersPerSystem}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="1" Maximum="30"  />
                                             <Label Content="Max Fleet Members Display" />
                                         </StackPanel>
                                     </StackPanel>
                                 </GroupBox>
                             </Border>
 
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
                                 <StackPanel Grid.Column="0">
-                                    <GroupBox Header ="Universe" Margin="4" Height="auto">
+                                    <GroupBox Header ="Universe" Margin="4">
                                         <StackPanel>
-                                            <StackPanel Orientation="Horizontal" Margin="0,0">
-                                                <xctk:DoubleUpDown Value="{Binding Path=UniverseMaxZoomDisplaySystems}" Text="" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="80" Increment="0.1" Maximum="5" Minimum="0.1" FormatString="F1" Background="Transparent"  Foreground="White" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                <xctk:DoubleUpDown Value="{Binding Path=UniverseMaxZoomDisplaySystems}" Text="" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="80" Increment="0.1" Maximum="5" Minimum="0.1" FormatString="F1"  />
                                                 <Label Content="Systems Max Zoom" />
                                             </StackPanel>
 
-                                            <StackPanel Orientation="Horizontal" Margin="0,0">
-                                                <xctk:DoubleUpDown Value="{Binding Path=UniverseMaxZoomDisplaySystemsText}" Text="" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="80" Increment="0.1" Maximum="5" Minimum="0.1" FormatString="F1" Background="Transparent"  Foreground="White" />
+                                            <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                <xctk:DoubleUpDown Value="{Binding Path=UniverseMaxZoomDisplaySystemsText}" Text="" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="80" Increment="0.1" Maximum="5" Minimum="0.1" FormatString="F1"  />
                                                 <Label Content="Text Max Zoom" />
                                             </StackPanel>
                                         </StackPanel>
                                     </GroupBox>
                                 </StackPanel>
                             </Border>
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Header="SOV" Margin="4" Height="auto">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                <GroupBox Header="SOV" Margin="4">
                                     <StackPanel>
                                         <CheckBox IsChecked="{Binding Path=ShowIhubVunerabilities}" Margin="0,2">Show IHub Timer</CheckBox>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=UpcomingSovMinutes}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="360" Background="Transparent"  Foreground="White" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=UpcomingSovMinutes}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="360"  />
                                             <Label Content="Upcoming Period (Mins)" />
                                         </StackPanel>
                                     </StackPanel>
@@ -255,13 +381,13 @@
                     </Grid>
                 </TabItem>
                 <TabItem Header="Overlay">
-                    <Grid Height="500" Width="600">
+                    <Grid Margin="6">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="50*" />
                             <ColumnDefinition Width="50*" />
                         </Grid.ColumnDefinitions>
 
-                        <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
+                        <Border Style="{StaticResource PreferencesSectionBorderStyle}">
                             <StackPanel Grid.Column="0">
                                 <GroupBox Header="General" Margin="4">
                                     <StackPanel>
@@ -282,20 +408,20 @@
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=IntelFreshTime}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="1" Maximum="900" Background="Transparent"  Foreground="White" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=IntelFreshTime}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="1" Maximum="900"  />
                                             <Label Content="First, Intel is fresh for x seconds" />
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=IntelStaleTime}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="1200" Background="Transparent"  Foreground="White" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=IntelStaleTime}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="1200"  />
                                             <Label Content="Then, Intel is stale for x seconds" />
                                         </StackPanel>
 
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <xctk:IntegerUpDown Value="{Binding Path=IntelHistoricTime}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="1200" Background="Transparent"  Foreground="White" ValueChanged="zkilltime_ValueChanged" />
+                                            <xctk:IntegerUpDown Value="{Binding Path=IntelHistoricTime}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0" Width="70" Minimum="5" Maximum="1200"  ValueChanged="zkilltime_ValueChanged" />
                                             <Label Content="Finally, Intel is historic for x seconds" />
                                         </StackPanel>
-                                        <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayIndividualCharacterWindows}" Content="Open individual windows for each character." />
+                                        <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayIndividualCharacterWindows}" Content="Open individual windows for each character." />
                                         <StackPanel Orientation="Horizontal" Margin="0,2">
                                             <Label Content="Char names on overlay: " />
                                             <ComboBox SelectedValuePath="Content" SelectedValue="{Binding Path=OverlayAdditionalCharacterNamesDisplay}" Width="120">
@@ -310,21 +436,21 @@
                             </StackPanel>
                         </Border>
                         <StackPanel Grid.Column="1">
-                            <Border BorderBrush="{DynamicResource ButtonBorder}" BorderThickness="1" Margin="2">
-                                <GroupBox Margin="4" Height="auto">
+                            <Border Style="{StaticResource PreferencesSectionBorderStyle}">
+                                <GroupBox Margin="4">
                                     <StackPanel>
 
-                                        <StackPanel Orientation="Vertical" Margin="0,0">
+                                        <StackPanel Orientation="Vertical" Margin="0,1">
                                             <Label Content="Overlay Information" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowCharName}" Content="Show name of the active character in title" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowCharLocation}" Content="Show location of the active character in title" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowJumpBridges}" Content="Show JumpBridges on overlay" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowSystemNames}" Content="Show Individual System Names on overlay" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowCharName}" Content="Show name of the active character in title" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowCharLocation}" Content="Show location of the active character in title" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowJumpBridges}" Content="Show JumpBridges on overlay" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowSystemNames}" Content="Show Individual System Names on overlay" />
                                             <Label Content="Hunter Mode Information" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowNPCKills}" Content="Show NPC kills" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowNPCKillDelta}" Content="Show NPC kill delta" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayShowRoute}" Content="Show the current route" />
-                                            <CheckBox Margin="0,3" IsChecked="{Binding Path=OverlayHunterModeShowFullRegion}" Content="Show the full region in hunter mode" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowNPCKills}" Content="Show NPC kills" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowNPCKillDelta}" Content="Show NPC kill delta" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayShowRoute}" Content="Show the current route" />
+                                            <CheckBox Margin="0,2" IsChecked="{Binding Path=OverlayHunterModeShowFullRegion}" Content="Show the full region in hunter mode" />
                                         </StackPanel>
                                     </StackPanel>
                                 </GroupBox>
@@ -334,13 +460,13 @@
                 </TabItem>
 
                 <TabItem Header="Colours">
-                    <Grid Height="500" Width="600">
+                    <Grid Margin="6">
                         <ScrollViewer>
                             <StackPanel>
-                                <xctk:PropertyGrid x:Name="ColoursPropertyGrid" AutoGenerateProperties="True" ShowSearchBox="False" ShowSortOptions="False" Background="Black">
+                                <xctk:PropertyGrid x:Name="ColoursPropertyGrid" AutoGenerateProperties="True" ShowSearchBox="False" ShowSortOptions="False" Background="{DynamicResource UiSurfaceAltBrush}">
                                     <xctk:PropertyGrid.CategoryGroupHeaderTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding}" Foreground="Black" />
+                                            <TextBlock Text="{Binding}" Foreground="{DynamicResource UiTextPrimaryBrush}" />
                                         </DataTemplate>
                                     </xctk:PropertyGrid.CategoryGroupHeaderTemplate>
                                 </xctk:PropertyGrid>
@@ -350,12 +476,17 @@
                     </Grid>
                 </TabItem>
             </TabControl>
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Bottom" Height="20" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,2">
-                <Button Content="Open Preferences Folder" Margin="10,0" Width="145" Click="Prefs_OpenFolder_Click" />
-                <Button Content="Default" Margin="3,0" Width="55" Click="Prefs_Default_Click" />
-                <Button Content="OK" Margin="3,0" Width="55" Click="Prefs_OK_Click" />
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Bottom" VerticalAlignment="Bottom" HorizontalAlignment="Right" Margin="0,10,0,0">
+                <Button Content="Open Preferences Folder" Margin="0,0,8,0" Width="170" Click="Prefs_OpenFolder_Click" Style="{StaticResource GhostButtonStyle}" />
+                <Button Content="Default" Margin="0,0,8,0" Width="80" Click="Prefs_Default_Click" Style="{StaticResource GhostButtonStyle}" />
+                <Button Content="OK" Width="80" Click="Prefs_OK_Click" Style="{StaticResource GoldButtonStyle}" />
             </StackPanel>
         </DockPanel>
     </Grid>
 </Window>
+
+
+
+
+
 

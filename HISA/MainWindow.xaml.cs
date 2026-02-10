@@ -1203,15 +1203,19 @@ namespace HISA
             dlg.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
             dlg.Title = "Load Infrastructure Upgrades";
 
+            string saveRoot = !string.IsNullOrWhiteSpace(EVEManager?.SaveDataRootFolder)
+                ? EVEManager.SaveDataRootFolder
+                : EVEData.EveAppConfig.StorageRoot;
+
             // Default to the auto-load file location
-            string defaultPath = System.IO.Path.Combine(EVEData.EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+            string defaultPath = System.IO.Path.Combine(saveRoot, "InfrastructureUpgrades.txt");
             if(System.IO.File.Exists(defaultPath))
             {
                 dlg.FileName = defaultPath;
             }
             else
             {
-                dlg.InitialDirectory = EVEData.EveAppConfig.StorageRoot;
+                dlg.InitialDirectory = saveRoot;
             }
 
             bool? result = dlg.ShowDialog();
@@ -1220,6 +1224,8 @@ namespace HISA
             {
                 string filename = dlg.FileName;
                 EVEManager.LoadInfrastructureUpgrades(filename);
+                // Persist loaded content to canonical startup file.
+                EVEManager.SaveInfrastructureUpgrades(defaultPath);
 
                 // Refresh the current region view to show the loaded upgrades
                 if(RegionUC != null)
@@ -1236,8 +1242,12 @@ namespace HISA
             dlg.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*";
             dlg.Title = "Save Infrastructure Upgrades";
 
+            string saveRoot = !string.IsNullOrWhiteSpace(EVEManager?.SaveDataRootFolder)
+                ? EVEManager.SaveDataRootFolder
+                : EVEData.EveAppConfig.StorageRoot;
+
             // Default to the auto-load file location
-            string defaultPath = System.IO.Path.Combine(EVEData.EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+            string defaultPath = System.IO.Path.Combine(saveRoot, "InfrastructureUpgrades.txt");
             dlg.FileName = defaultPath;
 
             bool? result = dlg.ShowDialog();

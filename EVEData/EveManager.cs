@@ -3593,6 +3593,9 @@ namespace HISA.EVEData
             File.WriteAllLines(Path.Combine(SaveDataRootFolder, "IntelIgnoreFilters.txt"), IntelIgnoreFilters);
             File.WriteAllLines(Path.Combine(SaveDataRootFolder, "IntelAlertFilters.txt"), IntelAlertFilters);
             File.WriteAllLines(Path.Combine(SaveDataRootFolder, "CynoBeacons.txt"), beaconsToSave);
+
+            // Keep infrastructure upgrades persisted alongside other app state.
+            SaveInfrastructureUpgrades(Path.Combine(SaveDataRootFolder, "InfrastructureUpgrades.txt"));
         }
 
         /// <summary>

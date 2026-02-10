@@ -43,7 +43,10 @@ namespace HISA
             }
 
             EM.LoadInfrastructureUpgradesFromText(text);
-            string upgradesFilePath = System.IO.Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+            string root = (EM != null && !string.IsNullOrWhiteSpace(EM.SaveDataRootFolder))
+                ? EM.SaveDataRootFolder
+                : EveAppConfig.StorageRoot;
+            string upgradesFilePath = System.IO.Path.Combine(root, "InfrastructureUpgrades.txt");
             EM.SaveInfrastructureUpgrades(upgradesFilePath);
             DialogResult = true;
         }

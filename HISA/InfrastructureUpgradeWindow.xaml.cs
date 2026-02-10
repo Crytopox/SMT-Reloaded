@@ -17,6 +17,16 @@ namespace HISA
         private string selectedSystemName;
         private string upgradesFilePath;
 
+        private string GetDefaultUpgradesFilePath()
+        {
+            if (EM != null && !string.IsNullOrWhiteSpace(EM.SaveDataRootFolder))
+            {
+                return Path.Combine(EM.SaveDataRootFolder, "InfrastructureUpgrades.txt");
+            }
+
+            return Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+        }
+
         public InfrastructureUpgradeWindow()
         {
             InitializeComponent();
@@ -31,7 +41,7 @@ namespace HISA
             if (EM != null)
             {
                 // Set up the auto-save file path
-                upgradesFilePath = Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt");
+                upgradesFilePath = GetDefaultUpgradesFilePath();
                 AutoSavePathText.Text = $"Autosave: {upgradesFilePath}";
 
                 // Populate system combo box with all null sec systems
@@ -250,7 +260,7 @@ namespace HISA
             }
             else
             {
-                dlg.InitialDirectory = EveAppConfig.StorageRoot;
+                dlg.InitialDirectory = EM.SaveDataRootFolder;
             }
 
             bool? result = dlg.ShowDialog();
@@ -258,7 +268,9 @@ namespace HISA
             {
                 string filename = dlg.FileName;
                 EM.LoadInfrastructureUpgrades(filename);
-                upgradesFilePath = filename;
+
+                // Always keep autosave on the canonical app storage file for persistence on restart.
+                upgradesFilePath = GetDefaultUpgradesFilePath();
                 AutoSavePathText.Text = $"Autosave: {upgradesFilePath}";
 
                 RefreshAllUpgrades();
@@ -267,6 +279,7 @@ namespace HISA
                     LoadUpgradesForSystem(selectedSystemName);
                 }
 
+                AutoSave();
                 RefreshOwnerMap();
             }
         }
@@ -284,7 +297,7 @@ namespace HISA
                 Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*",
                 Title = "Save Infrastructure Upgrades",
                 FileName = string.IsNullOrEmpty(upgradesFilePath)
-                    ? Path.Combine(EveAppConfig.StorageRoot, "InfrastructureUpgrades.txt")
+                    ? GetDefaultUpgradesFilePath()
                     : upgradesFilePath
             };
 
@@ -293,8 +306,6 @@ namespace HISA
             {
                 string filename = dlg.FileName;
                 EM.SaveInfrastructureUpgrades(filename);
-                upgradesFilePath = filename;
-                AutoSavePathText.Text = $"Autosave: {upgradesFilePath}";
             }
         }
 

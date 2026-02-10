@@ -13,6 +13,7 @@
     <Color x:Key="UiStrokeSoftColor">#2A3F5B</Color>
     <Color x:Key="UiTextPrimaryColor">#EAF4FF</Color>
     <Color x:Key="UiTextMutedColor">#A7BCD4</Color>
+    <Color x:Key="UiTextLabelColor">#C7DAEE</Color>
     <Color x:Key="UiGoldColor">#62AFFF</Color>
     <Color x:Key="UiGoldHoverColor">#86C2FF</Color>
     <Color x:Key="UiGoldSoftColor">#2A4263</Color>
@@ -34,11 +35,15 @@
     <SolidColorBrush x:Key="UiStrokeSoftBrush" Color="{StaticResource UiStrokeSoftColor}" />
     <SolidColorBrush x:Key="UiTextPrimaryBrush" Color="{StaticResource UiTextPrimaryColor}" />
     <SolidColorBrush x:Key="UiTextMutedBrush" Color="{StaticResource UiTextMutedColor}" />
+    <SolidColorBrush x:Key="UiTextLabelBrush" Color="{StaticResource UiTextLabelColor}" />
     <SolidColorBrush x:Key="UiGoldBrush" Color="{StaticResource UiGoldColor}" />
     <SolidColorBrush x:Key="UiGoldHoverBrush" Color="{StaticResource UiGoldHoverColor}" />
     <SolidColorBrush x:Key="UiGoldSoftBrush" Color="{StaticResource UiGoldSoftColor}" />
     <SolidColorBrush x:Key="UiDangerBrush" Color="{StaticResource UiDangerColor}" />
     <SolidColorBrush x:Key="UiDangerHoverBrush" Color="{StaticResource UiDangerHoverColor}" />
+    <SolidColorBrush x:Key="UiControlHoverBrush" Color="#2D4663" />
+    <SolidColorBrush x:Key="UiSelectionBrush" Color="#3A5D84" />
+    <SolidColorBrush x:Key="UiSelectionTextBrush" Color="{StaticResource UiTextPrimaryColor}" />
 
     <!-- Window chrome -->
     <Style x:Key="WindowTitleBarButtonStyle" TargetType="Button">
@@ -236,7 +241,7 @@
     <Style x:Key="FieldLabelTextStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="SemiBold" />
-        <Setter Property="Foreground" Value="{StaticResource UiTextMutedBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource UiTextLabelBrush}" />
         <Setter Property="Margin" Value="0,0,0,4" />
     </Style>
 
@@ -247,8 +252,8 @@
 
     <!-- Card -->
     <Style x:Key="CardBorderStyle" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource UiSurfaceBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource UiStrokeSoftBrush}" />
+        <Setter Property="Background" Value="{StaticResource UiSurfaceAltBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource UiStrokeBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CornerRadius" Value="8" />
     </Style>
@@ -366,14 +371,97 @@
     <Style x:Key="ModernCheckBoxStyle" TargetType="CheckBox">
         <Setter Property="Foreground" Value="{StaticResource UiTextPrimaryBrush}" />
         <Setter Property="FontSize" Value="12" />
+        <Setter Property="MinHeight" Value="20" />
         <Setter Property="VerticalAlignment" Value="Center" />
-        <Setter Property="Margin" Value="0,1,0,1" />
+        <Setter Property="Margin" Value="0,2,0,2" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <Grid SnapsToDevicePixels="True">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="18" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border x:Name="Box"
+                                Grid.Column="0"
+                                Width="16"
+                                Height="16"
+                                HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                CornerRadius="3"
+                                Background="{StaticResource UiSurfaceAltBrush}"
+                                BorderBrush="{StaticResource UiStrokeSoftBrush}"
+                                BorderThickness="1" />
+
+                        <Path x:Name="CheckMark"
+                              Grid.Column="0"
+                              Data="M 3 8 L 6.5 11.5 L 13 5"
+                              Stroke="{StaticResource UiTextPrimaryBrush}"
+                              StrokeThickness="1.9"
+                              StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              HorizontalAlignment="Left"
+                              VerticalAlignment="Center"
+                              Margin="1,0,0,0"
+                              Visibility="Collapsed" />
+
+                        <Rectangle x:Name="IndeterminateMark"
+                                   Grid.Column="0"
+                                   Width="8"
+                                   Height="2"
+                                   RadiusX="1"
+                                   RadiusY="1"
+                                   Fill="{StaticResource UiTextPrimaryBrush}"
+                                   HorizontalAlignment="Left"
+                                   VerticalAlignment="Center"
+                                   Margin="4,0,0,0"
+                                   Visibility="Collapsed" />
+
+                        <ContentPresenter Grid.Column="1"
+                                          Margin="8,0,0,0"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          RecognizesAccessKey="True" />
+                    </Grid>
+
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource UiStrokeBrush}" />
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource UiControlHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource UiGoldBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource UiGoldSoftBrush}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource UiGoldBrush}" />
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="IndeterminateMark" Property="Visibility" Value="Collapsed" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="{x:Null}">
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource UiGoldSoftBrush}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource UiGoldBrush}" />
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Collapsed" />
+                            <Setter TargetName="IndeterminateMark" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.55" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
+
+    <Style TargetType="CheckBox" BasedOn="{StaticResource ModernCheckBoxStyle}" />
 
     <Style x:Key="ModernComboBoxItemStyle" TargetType="ComboBoxItem">
         <Setter Property="Foreground" Value="{StaticResource UiTextPrimaryBrush}" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Padding" Value="7,3" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Style.Triggers>
             <Trigger Property="IsHighlighted" Value="True">
@@ -396,6 +484,9 @@
         <Setter Property="BorderBrush" Value="{StaticResource UiStrokeSoftBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="{StaticResource UiTextPrimaryBrush}" />
+        <Setter Property="SelectionBrush" Value="{StaticResource UiSelectionBrush}" />
+        <Setter Property="SelectionTextBrush" Value="{StaticResource UiSelectionTextBrush}" />
+        <Setter Property="CaretBrush" Value="{StaticResource UiTextPrimaryBrush}" />
         <Setter Property="Padding" Value="9" />
         <Setter Property="Template">
             <Setter.Value>
@@ -411,6 +502,9 @@
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource UiGoldBrush}" />
                         </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource UiStrokeBrush}" />
+                        </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.6" />
                         </Trigger>
@@ -421,15 +515,23 @@
     </Style>
 
     <Style x:Key="ComboInputStyle" TargetType="ComboBox">
+        <Style.Resources>
+            <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#1C2A3E" />
+            <SolidColorBrush x:Key="{x:Static SystemColors.ControlTextBrushKey}" Color="#EAF4FF" />
+            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#2A4263" />
+            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#EAF4FF" />
+        </Style.Resources>
         <Setter Property="Background" Value="{StaticResource UiSurfaceAltBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource UiStrokeSoftBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="{StaticResource UiTextPrimaryBrush}" />
         <Setter Property="ItemContainerStyle" Value="{StaticResource ModernComboBoxItemStyle}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <Setter Property="Padding" Value="8,3" />
-        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Padding" Value="6,1" />
+        <Setter Property="MinHeight" Value="24" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="MaxDropDownHeight" Value="420" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -443,12 +545,12 @@
                         <Grid Margin="0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="28" />
+                                <ColumnDefinition Width="24" />
                             </Grid.ColumnDefinitions>
 
                             <ContentPresenter x:Name="ContentSite"
                                               Grid.Column="0"
-                                              Margin="9,0,4,0"
+                                              Margin="7,0,4,0"
                                               VerticalAlignment="Center"
                                               HorizontalAlignment="Left"
                                               Content="{TemplateBinding SelectionBoxItem}"
@@ -459,7 +561,7 @@
 
                             <TextBox x:Name="PART_EditableTextBox"
                                      Grid.Column="0"
-                                     Margin="8,2,2,2"
+                                     Margin="6,1,2,1"
                                      BorderThickness="0"
                                      Background="Transparent"
                                      Foreground="{TemplateBinding Foreground}"
@@ -497,17 +599,19 @@
                                AllowsTransparency="True"
                                Focusable="False"
                                IsOpen="{TemplateBinding IsDropDownOpen}"
-                               PopupAnimation="Slide">
+                               PopupAnimation="Fade">
                             <Border x:Name="DropDownBorder"
                                     MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
-                                    Margin="0,4,0,0"
+                                    Margin="0,2,0,0"
                                     Background="{StaticResource UiSurfaceAltBrush}"
                                     BorderBrush="{StaticResource UiStrokeBrush}"
                                     BorderThickness="1"
                                     CornerRadius="5"
                                     SnapsToDevicePixels="True">
-                                <ScrollViewer Margin="2" CanContentScroll="True">
-                                    <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Contained" />
+                                <ScrollViewer Margin="2"
+                                              CanContentScroll="True"
+                                              KeyboardNavigation.DirectionalNavigation="Contained">
+                                    <ItemsPresenter />
                                 </ScrollViewer>
                             </Border>
                         </Popup>
@@ -528,7 +632,7 @@
                             <Setter TargetName="ArrowHost" Property="Background" Value="#2C385986" />
                         </Trigger>
                         <Trigger Property="HasItems" Value="False">
-                            <Setter TargetName="DropDownBorder" Property="MinHeight" Value="24" />
+                            <Setter TargetName="DropDownBorder" Property="MinHeight" Value="20" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter TargetName="Bd" Property="Opacity" Value="0.55" />
@@ -538,6 +642,13 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <Style x:Key="CompactComboInputStyle" TargetType="ComboBox" BasedOn="{StaticResource ComboInputStyle}">
+        <Setter Property="MinHeight" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="Padding" Value="4,0" />
+        <Setter Property="FontSize" Value="10" />
     </Style>
 
     <!-- DataGrid -->
