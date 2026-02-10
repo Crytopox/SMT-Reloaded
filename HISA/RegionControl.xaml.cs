@@ -130,7 +130,7 @@ namespace HISA
         private readonly Dictionary<string, Brush> m_RegionTintStrokeCache = new Dictionary<string, Brush>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> m_RegionTintIndex = new Dictionary<string, int>(StringComparer.Ordinal);
         private string m_RegionTintKey;
-        private bool m_ShowRegionTint = true;
+        private bool m_ShowRegionTint = false;
         private readonly HashSet<string> m_SelectedTintRegions = new HashSet<string>(StringComparer.Ordinal);
         public List<RegionColorItem> RegionColorLegendItems { get; private set; } = new List<RegionColorItem>();
         public bool ShowRegionLegend { get; private set; }

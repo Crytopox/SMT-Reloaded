@@ -172,13 +172,16 @@ namespace HISA
             // Set up UI thread marshaling for ObservableCollection operations
             EVEData.EveManager.UIThreadInvoker = (action) =>
             {
-                if (Application.Current.Dispatcher.CheckAccess())
+                if (Application.Current.Dispatcher != null)
                 {
-                    action();
-                }
-                else
-                {
-                    Application.Current.Dispatcher.Invoke(action);
+                    if (Application.Current.Dispatcher.CheckAccess())
+                    {
+                        action();
+                    }
+                    else
+                    {
+                        Application.Current.Dispatcher.Invoke(action);
+                    }
                 }
             };
             
