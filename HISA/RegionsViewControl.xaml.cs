@@ -24,6 +24,9 @@ namespace HISA
         public string SelectedRegionName { get; private set; }
 
         private System.Windows.Threading.DispatcherTimer uiRefreshTimer;
+        private long m_LastRefreshSignature = long.MinValue;
+        private DateTime m_LastRefreshUtc = DateTime.MinValue;
+        private const int IDLE_REFRESH_FORCE_SECONDS = 30;
 
         public static readonly RoutedEvent RequestRegionSelectEvent = EventManager.RegisterRoutedEvent("RequestRegion", RoutingStrategy.Bubble, typeof(RoutedEventHandler), typeof(UniverseControl));
 
@@ -50,7 +53,36 @@ namespace HISA
 
         private void UiRefreshTimer_Tick(object sender, EventArgs e)
         {
+            if(!IsVisible)
+            {
+                return;
+            }
+
+            long signature = ComputeIdleSignature();
+            bool periodicRefresh = (DateTime.UtcNow - m_LastRefreshUtc).TotalSeconds >= IDLE_REFRESH_FORCE_SECONDS;
+            if(signature == m_LastRefreshSignature && !periodicRefresh)
+            {
+                return;
+            }
+
+            m_LastRefreshSignature = signature;
+            m_LastRefreshUtc = DateTime.UtcNow;
             Redraw(false);
+        }
+
+        private long ComputeIdleSignature()
+        {
+            unchecked
+            {
+                long hash = 17;
+                hash = (hash * 31) + (SelectedRegionName?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (MapConf?.ShowCharacterNamesOnMap == true ? 1 : 0);
+                hash = (hash * 31) + (EVEData.EveManager.Instance?.Regions?.Count ?? 0);
+                hash = (hash * 31) + (EVEData.EveManager.Instance?.LocalCharacters?.Count ?? 0);
+                hash = (hash * 31) + (EVEData.EveManager.Instance?.TheraConnections?.Count ?? 0);
+                hash = (hash * 31) + (EVEData.EveManager.Instance?.TurnurConnections?.Count ?? 0);
+                return hash;
+            }
         }
 
         public void Redraw(bool redraw)

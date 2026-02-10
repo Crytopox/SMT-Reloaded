@@ -185,6 +185,19 @@ namespace HISA
 
         // Timer to Re-draw the map
         private System.Windows.Threading.DispatcherTimer uiRefreshTimer;
+        private long m_LastIdleRefreshSignature = long.MinValue;
+        private DateTime m_LastIdleRefreshUtc = DateTime.MinValue;
+        private string m_LastFollowCharacterLocation = string.Empty;
+        private const int IDLE_REDRAW_FORCE_SECONDS = 30;
+        private string m_LastHoveredSystemName = string.Empty;
+        private int m_LastHoverThemeHash = 0;
+        private DateTime m_LastHoverPopupBuildUtc = DateTime.MinValue;
+        private DateTime m_LastMapInteractionUtc = DateTime.MinValue;
+        private const int HOVER_POPUP_REBUILD_MS = 300;
+        private const int HOVER_SUPPRESS_AFTER_MAP_INTERACTION_MS = 250;
+        private const int MAP_INTERACTION_SETTLE_MS = 220;
+        private bool m_MapInteractionActive = false;
+        private System.Windows.Threading.DispatcherTimer m_MapInteractionSettleTimer;
 
         // events
 
@@ -220,10 +233,15 @@ namespace HISA
 
             helpIcon.MouseLeftButtonDown += HelpIcon_MouseLeftButtonDown;
             MainZoomControl.PreviewMouseMove += MainCanvas_MouseMove;
+            MainZoomControl.PreviewMouseWheel += MainZoomControl_PreviewMouseWheel;
             MainZoomControl.PreviewMouseLeftButtonDown += MainCanvas_MouseLeftButtonDown;
             MainZoomControl.PreviewMouseLeftButtonUp += MainCanvas_MouseLeftButtonUp;
             MainZoomControl.MouseLeave += MainCanvas_MouseLeftButtonUp;
             SnapToGridChk.IsEnabled = false;
+
+            m_MapInteractionSettleTimer = new System.Windows.Threading.DispatcherTimer();
+            m_MapInteractionSettleTimer.Interval = TimeSpan.FromMilliseconds(MAP_INTERACTION_SETTLE_MS);
+            m_MapInteractionSettleTimer.Tick += MapInteractionSettleTimer_Tick;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -827,7 +845,7 @@ namespace HISA
 
             uiRefreshTimer = new System.Windows.Threading.DispatcherTimer();
             uiRefreshTimer.Tick += UiRefreshTimer_Tick; ;
-            uiRefreshTimer.Interval = new TimeSpan(0, 0, 2);
+            uiRefreshTimer.Interval = new TimeSpan(0, 0, 4);
             uiRefreshTimer.Start();
 
             DataContext = this;
@@ -4720,6 +4738,7 @@ namespace HISA
         {
             if(!m_IsLayoutEditMode)
             {
+                BeginMapInteraction();
                 return;
             }
 
@@ -4994,6 +5013,11 @@ namespace HISA
                 return;
             }
 
+            if(e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed || e.MiddleButton == MouseButtonState.Pressed)
+            {
+                BeginMapInteraction();
+            }
+
             if(!m_IsLayoutEditMode || m_DragSystem == null)
             {
                 if(m_IsLayoutEditMode && m_IsSelecting)
@@ -5042,8 +5066,15 @@ namespace HISA
             }
         }
 
+        private void MainZoomControl_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            BeginMapInteraction();
+        }
+
         private void MainCanvas_MouseLeftButtonUp(object sender, MouseEventArgs e)
         {
+            ScheduleMapInteractionSettle();
+
             if(m_IsSelecting)
             {
                 Point p = GetCanvasPoint(e);
@@ -5061,6 +5092,50 @@ namespace HISA
             m_DragStartLayouts.Clear();
             MainCanvas.ReleaseMouseCapture();
             ReDrawMap(true);
+        }
+
+        private void BeginMapInteraction()
+        {
+            if(m_IsLayoutEditMode)
+            {
+                return;
+            }
+
+            m_LastMapInteractionUtc = DateTime.UtcNow;
+            if(!m_MapInteractionActive)
+            {
+                m_MapInteractionActive = true;
+                SystemInfoPopup.IsOpen = false;
+                ClearHoverHighlights();
+                MainCanvas.CacheMode = new BitmapCache(1.0);
+            }
+
+            ScheduleMapInteractionSettle();
+        }
+
+        private void ScheduleMapInteractionSettle()
+        {
+            if(m_IsLayoutEditMode)
+            {
+                return;
+            }
+
+            m_MapInteractionSettleTimer.Stop();
+            m_MapInteractionSettleTimer.Start();
+        }
+
+        private void MapInteractionSettleTimer_Tick(object sender, EventArgs e)
+        {
+            m_MapInteractionSettleTimer.Stop();
+            if(!m_MapInteractionActive)
+            {
+                return;
+            }
+
+            m_MapInteractionActive = false;
+            MainCanvas.CacheMode = null;
+            m_LastMapInteractionUtc = DateTime.UtcNow;
+            ReDrawMap(false);
         }
 
         private static bool IsDescendantOf(DependencyObject source, DependencyObject ancestor)
@@ -5676,22 +5751,89 @@ namespace HISA
         /// </summary>
         /// <param name="sender"></param>
         /// <param name="e"></param>
+        private int GetHoverThemeHash()
+        {
+            unchecked
+            {
+                int hash = 17;
+                hash = (hash * 31) + MapConf.ActiveColourScheme.PopupBackground.GetHashCode();
+                hash = (hash * 31) + MapConf.ActiveColourScheme.PopupText.GetHashCode();
+                hash = (hash * 31) + (ShowJumpBridges ? 1 : 0);
+                hash = (hash * 31) + (ShowRegionTint ? 1 : 0);
+                return hash;
+            }
+        }
+
+        private void ClearHoverHighlights()
+        {
+            foreach(UIElement uie in DynamicMapElementsSysLinkHighlight)
+            {
+                MainCanvas.Children.Remove(uie);
+            }
+
+            foreach(UIElement uie in DynamicMapElementsJBHighlight)
+            {
+                MainCanvas.Children.Remove(uie);
+            }
+
+            DynamicMapElementsJBHighlight.Clear();
+            DynamicMapElementsSysLinkHighlight.Clear();
+        }
+
         private void ShapeMouseOverHandler(object sender, MouseEventArgs e)
         {
             Shape obj = sender as Shape;
+            if(obj == null)
+            {
+                return;
+            }
+
+            if(m_MapInteractionActive)
+            {
+                return;
+            }
 
             EVEData.MapSystem selectedSys = obj.DataContext as EVEData.MapSystem;
+            if(selectedSys == null || selectedSys.ActualSystem == null)
+            {
+                return;
+            }
 
             Thickness one = new Thickness(1);
 
             if(obj.IsMouseOver && MapConf.ShowSystemPopup)
             {
+                if(Mouse.LeftButton == MouseButtonState.Pressed || Mouse.MiddleButton == MouseButtonState.Pressed || Mouse.RightButton == MouseButtonState.Pressed)
+                {
+                    return;
+                }
+
+                if((DateTime.UtcNow - m_LastMapInteractionUtc).TotalMilliseconds < HOVER_SUPPRESS_AFTER_MAP_INTERACTION_MS)
+                {
+                    return;
+                }
+
+                int themeHash = GetHoverThemeHash();
+                bool sameSystem = string.Equals(m_LastHoveredSystemName, selectedSys.Name, StringComparison.Ordinal);
+                bool recentBuild = (DateTime.UtcNow - m_LastHoverPopupBuildUtc).TotalMilliseconds < HOVER_POPUP_REBUILD_MS;
+                if(sameSystem && SystemInfoPopup.IsOpen && m_LastHoverThemeHash == themeHash && recentBuild)
+                {
+                    SystemInfoPopup.PlacementTarget = obj;
+                    return;
+                }
+
+                if(!sameSystem)
+                {
+                    ClearHoverHighlights();
+                }
+
                 SystemInfoPopup.PlacementTarget = obj;
                 SystemInfoPopup.VerticalOffset = 5;
                 SystemInfoPopup.HorizontalOffset = 15;
                 SystemInfoPopup.DataContext = selectedSys.ActualSystem;
 
                 SystemInfoPopupSP.Background = new SolidColorBrush(MapConf.ActiveColourScheme.PopupBackground);
+                SolidColorBrush popupTextBrush = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
 
                 SystemInfoPopupSP.Children.Clear();
 
@@ -5701,7 +5843,7 @@ namespace HISA
                 header.FontSize = 14;
                 header.Padding = one;
                 header.Margin = one;
-                header.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                header.Foreground = popupTextBrush;
 
                 SystemInfoPopupSP.Children.Add(header);
                 SystemInfoPopupSP.Children.Add(new Separator());
@@ -5732,7 +5874,7 @@ namespace HISA
                     characterlabel.Margin = one;
                     characterlabel.Content = s;
 
-                    characterlabel.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    characterlabel.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(characterlabel);
                 }
 
@@ -5745,14 +5887,14 @@ namespace HISA
                 constellation.Padding = one;
                 constellation.Margin = one;
                 constellation.Content = "Const\t:  " + selectedSys.ActualSystem.ConstellationName;
-                constellation.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                constellation.Foreground = popupTextBrush;
                 SystemInfoPopupSP.Children.Add(constellation);
 
                 Label region = new Label();
                 region.Padding = one;
                 region.Margin = one;
                 region.Content = "Region\t:  " + selectedSys.ActualSystem.Region;
-                region.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                region.Foreground = popupTextBrush;
                 SystemInfoPopupSP.Children.Add(region);
 
                 if(Region != null && Region.IsCustom)
@@ -5794,7 +5936,7 @@ namespace HISA
                 secstatus.Padding = one;
                 secstatus.Margin = one;
                 secstatus.Content = "Security\t:  " + string.Format("{0:0.00}", selectedSys.ActualSystem.TrueSec) + " (" + selectedSys.ActualSystem.SecType + ")";
-                secstatus.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                secstatus.Foreground = popupTextBrush;
                 SystemInfoPopupSP.Children.Add(secstatus);
 
                 SystemInfoPopupSP.Children.Add(new Separator());
@@ -5805,7 +5947,7 @@ namespace HISA
                     data.Padding = one;
                     data.Margin = one;
                     data.Content = $"Ship Kills\t:  {selectedSys.ActualSystem.ShipKillsLastHour}";
-                    data.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    data.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(data);
                 }
 
@@ -5815,7 +5957,7 @@ namespace HISA
                     data.Padding = one;
                     data.Margin = one;
                     data.Content = $"Pod Kills\t:  {selectedSys.ActualSystem.PodKillsLastHour}";
-                    data.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    data.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(data);
                 }
 
@@ -5825,7 +5967,7 @@ namespace HISA
                     data.Padding = one;
                     data.Margin = one;
                     data.Content = $"NPC Kills\t:  {selectedSys.ActualSystem.NPCKillsLastHour}, Delta ({selectedSys.ActualSystem.NPCKillsDeltaLastHour})";
-                    data.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    data.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(data);
                 }
 
@@ -5836,7 +5978,7 @@ namespace HISA
                     data.Margin = one;
 
                     data.Content = $"Jumps\t:  {selectedSys.ActualSystem.JumpsLastHour}";
-                    data.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    data.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(data);
                 }
 
@@ -5853,7 +5995,7 @@ namespace HISA
                             Label jbl = new Label();
                             jbl.Padding = one;
                             jbl.Margin = one;
-                            jbl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                            jbl.Foreground = popupTextBrush;
 
                             jbl.Content = $"JB\t: {jb.To}";
 
@@ -5882,7 +6024,7 @@ namespace HISA
                             Label jbl = new Label();
                             jbl.Padding = one;
                             jbl.Margin = one;
-                            jbl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                            jbl.Foreground = popupTextBrush;
 
                             jbl.Content = $"JB\t: {jb.From}";
 
@@ -6050,7 +6192,7 @@ namespace HISA
                     sov.Padding = one;
                     sov.Margin = one;
                     sov.Content = $"IHUB\t:  {selectedSys.ActualSystem.IHubVunerabliltyStart.Hour:00}:{selectedSys.ActualSystem.IHubVunerabliltyStart.Minute:00} to {selectedSys.ActualSystem.IHubVunerabliltyEnd.Hour:00}:{selectedSys.ActualSystem.IHubVunerabliltyEnd.Minute:00}, ADM : {selectedSys.ActualSystem.IHubOccupancyLevel}";
-                    sov.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    sov.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(sov);
                 }
 
@@ -6061,7 +6203,7 @@ namespace HISA
                     sov.Padding = one;
                     sov.Margin = one;
                     sov.Content = $"TCU\t:  {selectedSys.ActualSystem.TCUVunerabliltyStart.Hour:00}:{selectedSys.ActualSystem.TCUVunerabliltyStart.Minute:00} to {selectedSys.ActualSystem.TCUVunerabliltyEnd.Hour:00}:{selectedSys.ActualSystem.TCUVunerabliltyEnd.Minute:00}, ADM : {selectedSys.ActualSystem.TCUOccupancyLevel}";
-                    sov.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    sov.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(sov);
                 }
 
@@ -6072,7 +6214,7 @@ namespace HISA
                     upgradeHeader.Padding = one;
                     upgradeHeader.Margin = one;
                     upgradeHeader.Content = "Infrastructure Upgrades:";
-                    upgradeHeader.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    upgradeHeader.Foreground = popupTextBrush;
                     upgradeHeader.FontWeight = FontWeights.Bold;
                     SystemInfoPopupSP.Children.Add(upgradeHeader);
 
@@ -6099,14 +6241,14 @@ namespace HISA
                         tl.Padding = one;
                         tl.Margin = one;
                         tl.Content = $"Thera\t: in {tc.InSignatureID}";
-                        tl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                        tl.Foreground = popupTextBrush;
                         SystemInfoPopupSP.Children.Add(tl);
 
                         tl = new Label();
                         tl.Padding = one;
                         tl.Margin = one;
                         tl.Content = $"Thera\t: out {tc.OutSignatureID}";
-                        tl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                        tl.Foreground = popupTextBrush;
                         SystemInfoPopupSP.Children.Add(tl);
                     }
                 }
@@ -6123,14 +6265,14 @@ namespace HISA
                         tl.Padding = one;
                         tl.Margin = one;
                         tl.Content = $"Turnur\t: in {tc.InSignatureID}";
-                        tl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                        tl.Foreground = popupTextBrush;
                         SystemInfoPopupSP.Children.Add(tl);
 
                         tl = new Label();
                         tl.Padding = one;
                         tl.Margin = one;
                         tl.Content = $"Turnur\t: out {tc.OutSignatureID}";
-                        tl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                        tl.Foreground = popupTextBrush;
                         SystemInfoPopupSP.Children.Add(tl);
                     }
                 }
@@ -6146,7 +6288,7 @@ namespace HISA
                         tl.Padding = one;
                         tl.Margin = one;
                         tl.Content = $"Storm\t: {s.Type}";
-                        tl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                        tl.Foreground = popupTextBrush;
                         SystemInfoPopupSP.Children.Add(tl);
                     }
                 }
@@ -6162,7 +6304,7 @@ namespace HISA
                         tl.Padding = one;
                         tl.Margin = one;
                         tl.Content = $"{p.Type} : {p.ShortDesc}";
-                        tl.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                        tl.Foreground = popupTextBrush;
                         SystemInfoPopupSP.Children.Add(tl);
                     }
                 }
@@ -6173,7 +6315,7 @@ namespace HISA
                     trigInfo.Padding = one;
                     trigInfo.Margin = one;
                     trigInfo.Content = $"Invasion : {selectedSys.ActualSystem.TrigInvasionStatus}";
-                    trigInfo.Foreground = new SolidColorBrush(MapConf.ActiveColourScheme.PopupText);
+                    trigInfo.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(trigInfo);
                 }
 
@@ -6185,20 +6327,15 @@ namespace HISA
                 }
 
                 SystemInfoPopup.IsOpen = true;
+                m_LastHoveredSystemName = selectedSys.Name;
+                m_LastHoverThemeHash = themeHash;
+                m_LastHoverPopupBuildUtc = DateTime.UtcNow;
             }
             else
             {
                 SystemInfoPopup.IsOpen = false;
-
-                foreach(UIElement uie in DynamicMapElementsSysLinkHighlight)
-                {
-                    MainCanvas.Children.Remove(uie);
-                }
-
-                foreach(UIElement uie in DynamicMapElementsJBHighlight)
-                {
-                    MainCanvas.Children.Remove(uie);
-                }
+                m_LastHoveredSystemName = string.Empty;
+                ClearHoverHighlights();
 
                 // trigger the hover event
 
@@ -6206,9 +6343,6 @@ namespace HISA
                 {
                     SystemHoverEvent(string.Empty);
                 }
-
-                DynamicMapElementsJBHighlight.Clear();
-                DynamicMapElementsSysLinkHighlight.Clear();
             }
         }
 
@@ -6366,21 +6500,84 @@ namespace HISA
         /// <param name="e"></param>
         private void UiRefreshTimer_Tick(object sender, EventArgs e)
         {
+            if(!IsVisible || Region == null || m_MapInteractionActive)
+            {
+                return;
+            }
+
+            bool stateChanged = false;
+
             if(currentJumpCharacter != "")
             {
                 foreach(LocalCharacter c in EM.LocalCharacters)
                 {
                     if(c.Name == currentJumpCharacter)
                     {
-                        currentCharacterJumpSystem = c.Location;
+                        string newLocation = c.Location ?? string.Empty;
+                        if(!string.Equals(currentCharacterJumpSystem, newLocation, StringComparison.Ordinal))
+                        {
+                            currentCharacterJumpSystem = newLocation;
+                            stateChanged = true;
+                        }
                     }
                 }
             }
 
-            Application.Current.Dispatcher.Invoke((Action)(() =>
+            if(ActiveCharacter != null && FollowCharacter)
             {
-                ReDrawMap(false);
-            }), DispatcherPriority.Normal);
+                string activeLocation = ActiveCharacter.Location ?? string.Empty;
+                if(!string.Equals(m_LastFollowCharacterLocation, activeLocation, StringComparison.Ordinal))
+                {
+                    m_LastFollowCharacterLocation = activeLocation;
+                    stateChanged = true;
+                }
+            }
+
+            long signature = ComputeIdleRefreshSignature();
+            bool periodicRefresh = (DateTime.UtcNow - m_LastIdleRefreshUtc).TotalSeconds >= IDLE_REDRAW_FORCE_SECONDS;
+
+            if(!stateChanged && signature == m_LastIdleRefreshSignature && !periodicRefresh)
+            {
+                return;
+            }
+
+            m_LastIdleRefreshSignature = signature;
+            m_LastIdleRefreshUtc = DateTime.UtcNow;
+            ReDrawMap(false);
+        }
+
+        private long ComputeIdleRefreshSignature()
+        {
+            unchecked
+            {
+                long hash = 17;
+                hash = (hash * 31) + (Region?.Name?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (SelectedSystem?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (currentJumpCharacter?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (currentCharacterJumpSystem?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (ActiveCharacter?.Location?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (ShowNPCKills ? 1 : 0);
+                hash = (hash * 31) + (ShowPodKills ? 1 : 0);
+                hash = (hash * 31) + (ShowShipKills ? 1 : 0);
+                hash = (hash * 31) + (ShowShipJumps ? 1 : 0);
+                hash = (hash * 31) + (ShowSystemSecurity ? 1 : 0);
+                hash = (hash * 31) + (ShowSystemADM ? 1 : 0);
+                hash = (hash * 31) + (ShowSovOwner ? 1 : 0);
+                hash = (hash * 31) + (ShowStandings ? 1 : 0);
+                hash = (hash * 31) + (ShowJumpBridges ? 1 : 0);
+                hash = (hash * 31) + (ShowSystemTimers ? 1 : 0);
+                hash = (hash * 31) + (ShowInfrastructureUpgrades ? 1 : 0);
+                hash = (hash * 31) + (ShowRegionTint ? 1 : 0);
+                hash = (hash * 31) + (MapConf?.DrawRoute == true ? 1 : 0);
+                hash = (hash * 31) + (MapConf?.ShowCharacterNamesOnMap == true ? 1 : 0);
+                hash = (hash * 31) + (EM?.LocalCharacters?.Count ?? 0);
+                hash = (hash * 31) + (EM?.ZKillFeed?.KillStream?.Count ?? 0);
+                hash = (hash * 31) + (EM?.TheraConnections?.Count ?? 0);
+                hash = (hash * 31) + (EM?.TurnurConnections?.Count ?? 0);
+                hash = (hash * 31) + (EM?.ActiveSovCampaigns?.Count ?? 0);
+                hash = (hash * 31) + (EM?.MetaliminalStorms?.Count ?? 0);
+                return hash;
+            }
         }
 
         private struct GateHelper

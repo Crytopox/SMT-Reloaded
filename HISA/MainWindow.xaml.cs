@@ -51,6 +51,7 @@ namespace HISA
         private System.Windows.Threading.DispatcherTimer uiRefreshTimer;
 
         private bool manualZKillFilterRefreshRequired = true;
+        private string lastHoveredSystemForIntel = string.Empty;
 
         private List<InfoItem> InfoLayer;
 
@@ -462,6 +463,13 @@ namespace HISA
 
         private void RegionUC_SystemHoverEvent(string system)
         {
+            string hoverSystem = system ?? string.Empty;
+            if(string.Equals(lastHoveredSystemForIntel, hoverSystem, StringComparison.Ordinal))
+            {
+                return;
+            }
+            lastHoveredSystemForIntel = hoverSystem;
+
             RawIntelBox.SelectedItem = null;
 
             // iterate over all of the RawIntelBox ui items
@@ -470,7 +478,7 @@ namespace HISA
                 IntelData id = RawIntelBox.Items[i] as IntelData;
                 if(id != null)
                 {
-                    if(system != string.Empty && id.Systems.Contains(system))
+                    if(hoverSystem != string.Empty && id.Systems.Contains(hoverSystem))
                     {
                         // highlight the item
                         ListViewItem lvi = RawIntelBox.ItemContainerGenerator.ContainerFromItem(id) as ListViewItem;
@@ -962,6 +970,11 @@ namespace HISA
 
         private void UiRefreshTimer_Tick(object sender, EventArgs e)
         {
+            if(WindowState == WindowState.Minimized || !IsVisible)
+            {
+                return;
+            }
+
             uiRefreshCounter++;
             if(uiRefreshCounter == 5)
             {

@@ -309,6 +309,13 @@ namespace HISA
 
         // Timer to Re-draw the map
         private System.Windows.Threading.DispatcherTimer uiRefreshTimer;
+        private long m_LastFastUpdateSignature = long.MinValue;
+        private DateTime m_LastFastUpdateUtc = DateTime.MinValue;
+        private string m_LastFollowCharacterLocation = string.Empty;
+        private const int IDLE_FASTUPDATE_FORCE_SECONDS = 30;
+        private const int MAP_INTERACTION_SETTLE_MS = 220;
+        private bool m_MapInteractionActive = false;
+        private System.Windows.Threading.DispatcherTimer m_MapInteractionSettleTimer;
 
         private int uiRefreshTimer_interval = 0;
 
@@ -337,6 +344,11 @@ namespace HISA
 
             MainTF = new Typeface(new FontFamily(new Uri("pack://application:,,,/External/AtkinsonHyperlegible/"), "./#Atkinson Hyperlegible"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
 
+            MainZoomControl.PreviewMouseLeftButtonDown += MainZoomControl_PreviewMouseLeftButtonDown;
+            MainZoomControl.PreviewMouseLeftButtonUp += MainZoomControl_PreviewMouseLeftButtonUp;
+            MainZoomControl.PreviewMouseMove += MainZoomControl_PreviewMouseMove;
+            MainZoomControl.PreviewMouseWheel += MainZoomControl_PreviewMouseWheel;
+
             UniverseMainCanvas.Children.Add(VHRegionShapes);
 
             UniverseMainCanvas.Children.Add(VHRangeSpheres);
@@ -354,6 +366,10 @@ namespace HISA
             uiRefreshTimer.Tick += UiRefreshTimer_Tick;
             uiRefreshTimer.Interval = new TimeSpan(0, 0, 5);
             uiRefreshTimer.Start();
+
+            m_MapInteractionSettleTimer = new System.Windows.Threading.DispatcherTimer();
+            m_MapInteractionSettleTimer.Interval = TimeSpan.FromMilliseconds(MAP_INTERACTION_SETTLE_MS);
+            m_MapInteractionSettleTimer.Tick += MapInteractionSettleTimer_Tick;
 
             PropertyChanged += UniverseControl_PropertyChanged;
 
@@ -544,6 +560,11 @@ namespace HISA
 
         private void UiRefreshTimer_Tick(object sender, EventArgs e)
         {
+            if(!IsVisible || m_MapInteractionActive)
+            {
+                return;
+            }
+
             uiRefreshTimer_interval++;
 
             bool FullRedraw = false;
@@ -556,11 +577,104 @@ namespace HISA
                 DataRedraw = false;
             }
 
+            bool stateChanged = false;
             if(FollowCharacterChk.IsChecked.HasValue && (bool)FollowCharacterChk.IsChecked)
             {
-                CentreMapOnActiveCharacter();
+                string currentLocation = ActiveCharacter?.Location ?? string.Empty;
+                if(!string.Equals(m_LastFollowCharacterLocation, currentLocation, StringComparison.Ordinal))
+                {
+                    m_LastFollowCharacterLocation = currentLocation;
+                    stateChanged = true;
+                    CentreMapOnActiveCharacter();
+                }
             }
+
+            long signature = ComputeFastUpdateSignature();
+            bool periodicRefresh = (DateTime.UtcNow - m_LastFastUpdateUtc).TotalSeconds >= IDLE_FASTUPDATE_FORCE_SECONDS;
+            if(!stateChanged && signature == m_LastFastUpdateSignature && !periodicRefresh)
+            {
+                return;
+            }
+
+            m_LastFastUpdateSignature = signature;
+            m_LastFastUpdateUtc = DateTime.UtcNow;
             ReDrawMap(FullRedraw, DataRedraw, FastUpdate);
+        }
+
+        private void MainZoomControl_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            BeginMapInteraction();
+        }
+
+        private void MainZoomControl_PreviewMouseMove(object sender, MouseEventArgs e)
+        {
+            if(e.LeftButton == MouseButtonState.Pressed || e.RightButton == MouseButtonState.Pressed || e.MiddleButton == MouseButtonState.Pressed)
+            {
+                BeginMapInteraction();
+            }
+        }
+
+        private void MainZoomControl_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            BeginMapInteraction();
+        }
+
+        private void MainZoomControl_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            ScheduleMapInteractionSettle();
+        }
+
+        private void BeginMapInteraction()
+        {
+            if(!m_MapInteractionActive)
+            {
+                m_MapInteractionActive = true;
+                UniverseMainCanvas.CacheMode = new BitmapCache(1.0);
+            }
+            ScheduleMapInteractionSettle();
+        }
+
+        private void ScheduleMapInteractionSettle()
+        {
+            m_MapInteractionSettleTimer.Stop();
+            m_MapInteractionSettleTimer.Start();
+        }
+
+        private void MapInteractionSettleTimer_Tick(object sender, EventArgs e)
+        {
+            m_MapInteractionSettleTimer.Stop();
+            if(!m_MapInteractionActive)
+            {
+                return;
+            }
+
+            m_MapInteractionActive = false;
+            UniverseMainCanvas.CacheMode = null;
+            ReDrawMap(false, false, true);
+        }
+
+        private long ComputeFastUpdateSignature()
+        {
+            unchecked
+            {
+                long hash = 17;
+                hash = (hash * 31) + (ShowNPCKills ? 1 : 0);
+                hash = (hash * 31) + (ShowPodKills ? 1 : 0);
+                hash = (hash * 31) + (ShowShipKills ? 1 : 0);
+                hash = (hash * 31) + (ShowShipJumps ? 1 : 0);
+                hash = (hash * 31) + (ShowJumpBridges ? 1 : 0);
+                hash = (hash * 31) + (MapConf?.ShowCharacterNamesOnMap == true ? 1 : 0);
+                hash = (hash * 31) + (MapConf?.DrawRoute == true ? 1 : 0);
+                hash = (hash * 31) + ESIOverlayScale.GetHashCode();
+                hash = (hash * 31) + (ActiveCharacter?.Location?.GetHashCode() ?? 0);
+                hash = (hash * 31) + (EM?.LocalCharacters?.Count ?? 0);
+                hash = (hash * 31) + (EM?.ZKillFeed?.KillStream?.Count ?? 0);
+                hash = (hash * 31) + (EM?.TheraConnections?.Count ?? 0);
+                hash = (hash * 31) + (EM?.TurnurConnections?.Count ?? 0);
+                hash = (hash * 31) + (CapitalRoute?.CurrentRoute?.Count ?? 0);
+                hash = (hash * 31) + (CapitalRoute?.AlternateMids?.Count ?? 0);
+                return hash;
+            }
         }
 
         private void VHSystems_MouseClicked(object sender, RoutedEventArgs e)
