@@ -7,6 +7,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Numerics;
 using System.IO;
@@ -3498,8 +3499,8 @@ namespace HISA.EVEData
                             }
                             else
                             {
-                                AllianceIDToTicker[ri.Id] = "???????????????";
-                                AllianceIDToName[ri.Id] = "?????";
+                                AllianceIDToTicker[ri.Id] = "????";
+                                AllianceIDToName[ri.Id] = "????";
                             }
                         }
                     }
@@ -4242,7 +4243,12 @@ namespace HISA.EVEData
                 UserAgent = "HISA-map-app : " + EveAppConfig.HISA_VERSION,
             });
 
-            ESIClient = new ESI.NET.EsiClient(config);
+            HttpClient esiHttpClient = new HttpClient(new EsiDebugLoggingHandler(new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All
+            }));
+
+            ESIClient = new ESI.NET.EsiClient(config, esiHttpClient);
             ESIScopes = new List<string>
             {
                 "publicData",
