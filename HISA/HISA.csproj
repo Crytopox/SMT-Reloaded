@@ -107,6 +107,7 @@
     <Resource Include="Images\Timer Inactive.png" />
     <Resource Include="Images\Timer.png" />
     <Resource Include="Images\SOV Upgrades\*.png" />
+    <Resource Include="Images\Brackets\*.png" />
     <AppDesigner Include="Properties\" />
   </ItemGroup>
   <ItemGroup>

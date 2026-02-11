@@ -38,6 +38,14 @@ namespace HISA
         private const double JUMP_RANGE_MARKER_STEP = 4;
         private const double JUMP_RANGE_ORIGIN_RING_SIZE = SYSTEM_SHAPE_SIZE + 18;
         private const double JUMP_RANGE_SEGMENT_RING_SIZE = SYSTEM_SHAPE_SIZE + 14;
+        private const int MAX_INTEL_BADGES = 6;
+        private const double INTEL_RING_DIAMETER = 34;
+        private const double INTEL_BADGE_SIZE = 10;
+        private const double INTEL_RING_STROKE_THICKNESS = 11.0;
+        private const double INTEL_BADGE_RING_INSET = 0.0;
+        private const double INTEL_RING_ROTATION_SECONDS = 9.0;
+        private const int ZINDEX_INTEL_RING = 112;
+        private const int ZINDEX_INTEL_BADGE = 113;
 
         private const int SYSTEM_TEXT_WIDTH = 100;
         private const int SYSTEM_TEXT_HEIGHT = 50;
@@ -81,6 +89,7 @@ namespace HISA
         private List<System.Windows.UIElement> DynamicMapElementsRouteHighlight;
         private System.Windows.Media.Imaging.BitmapImage edencomLogoImage;
         private System.Windows.Media.Imaging.BitmapImage fightImage;
+        private readonly Dictionary<IntelShipClass, System.Windows.Media.Imaging.BitmapImage> intelShipClassIcons = new Dictionary<IntelShipClass, System.Windows.Media.Imaging.BitmapImage>();
         private System.Windows.Media.Imaging.BitmapImage joveLogoImage;
         private System.Windows.Media.Imaging.BitmapImage stormImageBase;
         private System.Windows.Media.Imaging.BitmapImage stormImageEM;
@@ -225,6 +234,19 @@ namespace HISA
             trigLogoImage = ResourceLoader.LoadBitmapFromResource("Images/TrigTile.png");
             edencomLogoImage = ResourceLoader.LoadBitmapFromResource("Images/edencom.png");
             fightImage = ResourceLoader.LoadBitmapFromResource("Images/fight.png");
+            intelShipClassIcons[IntelShipClass.UnknownHostile] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/ship.png");
+            intelShipClassIcons[IntelShipClass.Capsule] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/capsule_16.png");
+            intelShipClassIcons[IntelShipClass.Frigate] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/frigate_16.png");
+            intelShipClassIcons[IntelShipClass.Destroyer] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/destroyer_16.png");
+            intelShipClassIcons[IntelShipClass.Cruiser] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/cruiser_16.png");
+            intelShipClassIcons[IntelShipClass.Battlecruiser] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/battleCruiser_16.png");
+            intelShipClassIcons[IntelShipClass.Battleship] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/battleship_16.png");
+            intelShipClassIcons[IntelShipClass.Industrial] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/industrial_16.png");
+            intelShipClassIcons[IntelShipClass.Mining] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/miningBarge_16.png");
+            intelShipClassIcons[IntelShipClass.Freighter] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/freighter_16.png");
+            intelShipClassIcons[IntelShipClass.Capital] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/dreadnought_16.png");
+            intelShipClassIcons[IntelShipClass.Fighter] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/fighterSquad_16.png");
+            intelShipClassIcons[IntelShipClass.Structure] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/structure.png");
             stormImageBase = ResourceLoader.LoadBitmapFromResource("Images/cloud_unknown.png");
             stormImageEM = ResourceLoader.LoadBitmapFromResource("Images/cloud_em.png");
             stormImageExp = ResourceLoader.LoadBitmapFromResource("Images/cloud_explosive.png");
@@ -2837,28 +2859,387 @@ namespace HISA
                             continue;
                         }
 
-                        // add circle to the map
-                        double radius = 24 + (100 * (1.0 - radiusScale));
-                        double circleOffset = radius / 2;
+                        // keep intel ring static and close to the system node; age is represented by fade only
+                        double ringDiameter = INTEL_RING_DIAMETER;
+                        double ringPathRadius = ringDiameter / 2.0;
+                        double ringVisualRadius = ringPathRadius + (INTEL_RING_STROKE_THICKNESS / 2.0);
+                        double ringVisualDiameter = ringVisualRadius * 2.0;
 
-                        Shape intelShape = new Ellipse() { Height = radius, Width = radius };
+                        Canvas intelOverlay = new Canvas
+                        {
+                            Width = ringVisualDiameter,
+                            Height = ringVisualDiameter,
+                            Opacity = Math.Max(0.35, 1.0 - (radiusScale * 0.7)),
+                            IsHitTestVisible = false
+                        };
+
+                        Shape intelShape = new Ellipse() { Height = ringDiameter, Width = ringDiameter };
+                        intelShape.Fill = Brushes.Transparent;
                         if(id.ClearNotification)
                         {
-                            intelShape.Fill = intelClearBlobBrush;
+                            intelShape.Stroke = intelClearBlobBrush;
                         }
                         else
                         {
-                            intelShape.Fill = intelBlobBrush;
+                            intelShape.Stroke = intelBlobBrush;
+                        }
+                        intelShape.StrokeThickness = INTEL_RING_STROKE_THICKNESS;
+                        intelShape.IsHitTestVisible = false;
+
+                        double localCenter = ringVisualRadius;
+                        Canvas.SetLeft(intelShape, localCenter - ringPathRadius);
+                        Canvas.SetTop(intelShape, localCenter - ringPathRadius);
+                        Canvas.SetZIndex(intelShape, 0);
+                        intelOverlay.Children.Add(intelShape);
+
+                        AddIntelAlertBadges(id, intelOverlay, localCenter, localCenter, ringPathRadius);
+
+                        if(!id.ClearNotification)
+                        {
+                            RotateTransform rt = new RotateTransform
+                            {
+                                CenterX = localCenter,
+                                CenterY = localCenter
+                            };
+                            intelOverlay.RenderTransform = rt;
+
+                            DoubleAnimation da = new DoubleAnimation
+                            {
+                                From = 360,
+                                To = 0,
+                                Duration = new Duration(TimeSpan.FromSeconds(INTEL_RING_ROTATION_SECONDS)),
+                                RepeatBehavior = RepeatBehavior.Forever
+                            };
+                            Timeline.SetDesiredFrameRate(da, 20);
+                            rt.BeginAnimation(RotateTransform.AngleProperty, da);
                         }
 
-                        Canvas.SetLeft(intelShape, sys.Layout.X - circleOffset);
-                        Canvas.SetTop(intelShape, sys.Layout.Y - circleOffset);
-                        Canvas.SetZIndex(intelShape, 15);
-                        MainCanvas.Children.Add(intelShape);
+                        Canvas.SetLeft(intelOverlay, sys.Layout.X - localCenter);
+                        Canvas.SetTop(intelOverlay, sys.Layout.Y - localCenter);
+                        Canvas.SetZIndex(intelOverlay, ZINDEX_INTEL_RING);
+                        MainCanvas.Children.Add(intelOverlay);
 
-                        DynamicMapElements.Add(intelShape);
+                        DynamicMapElements.Add(intelOverlay);
                     }
                 }
+            }
+        }
+
+        private ImageSource GetIntelShipClassIcon(IntelShipClass shipClass)
+        {
+            if(intelShipClassIcons.TryGetValue(shipClass, out System.Windows.Media.Imaging.BitmapImage icon) && icon != null)
+            {
+                return icon;
+            }
+
+            if(intelShipClassIcons.TryGetValue(IntelShipClass.UnknownHostile, out System.Windows.Media.Imaging.BitmapImage fallback) && fallback != null)
+            {
+                return fallback;
+            }
+
+            return fightImage;
+        }
+
+        private string GetIntelShipClassLabel(IntelShipClass shipClass)
+        {
+            switch(shipClass)
+            {
+                case IntelShipClass.UnknownHostile: return "Hostile (unknown class)";
+                case IntelShipClass.Capsule: return "Capsule";
+                case IntelShipClass.Frigate: return "Frigate";
+                case IntelShipClass.Destroyer: return "Destroyer";
+                case IntelShipClass.Cruiser: return "Cruiser";
+                case IntelShipClass.Battlecruiser: return "Battlecruiser";
+                case IntelShipClass.Battleship: return "Battleship";
+                case IntelShipClass.Industrial: return "Industrial";
+                case IntelShipClass.Mining: return "Mining";
+                case IntelShipClass.Freighter: return "Freighter";
+                case IntelShipClass.Capital: return "Capital";
+                case IntelShipClass.Fighter: return "Fighter";
+                case IntelShipClass.Structure: return "Structure";
+                default:
+                    return "Hostile";
+            }
+        }
+
+        private string GetIntelBadgeTooltip(IntelData intelData, IntelShipClass shipClass)
+        {
+            string classText = GetIntelShipClassLabel(shipClass);
+            if(intelData?.ReportedShips == null || intelData.ReportedShips.Count == 0)
+            {
+                return classText;
+            }
+
+            int maxShown = 6;
+            List<string> shownShips = intelData.ReportedShips.Take(maxShown).ToList();
+            int overflow = intelData.ReportedShips.Count - shownShips.Count;
+            return overflow > 0
+                ? $"{classText}: {string.Join(", ", shownShips)} +{overflow} more"
+                : $"{classText}: {string.Join(", ", shownShips)}";
+        }
+
+        private void AddIntelAlertBadges(IntelData intelData, Canvas parentCanvas, double centerX, double centerY, double ringRadius)
+        {
+            if(intelData == null || parentCanvas == null)
+            {
+                return;
+            }
+
+            List<IntelShipClass> badges = new List<IntelShipClass>();
+            if(intelData.ReportedShipClasses != null)
+            {
+                foreach(IntelShipClass shipClass in intelData.ReportedShipClasses)
+                {
+                    if(!badges.Contains(shipClass))
+                    {
+                        badges.Add(shipClass);
+                    }
+                }
+            }
+
+            if(intelData.ClearNotification)
+            {
+                // clear intel shouldn't render hostile class icons
+                badges.Clear();
+            }
+
+            if(!intelData.ClearNotification && badges.Count == 0)
+            {
+                badges.Add(IntelShipClass.UnknownHostile);
+            }
+
+            int badgeCount = Math.Min(MAX_INTEL_BADGES, badges.Count);
+            if(badgeCount == 0)
+            {
+                return;
+            }
+
+            for(int i = 0; i < badgeCount; i++)
+            {
+                IntelShipClass shipClass = badges[i];
+                double angle = (-Math.PI / 2) + ((Math.PI * 2.0 * i) / badgeCount);
+                double badgeRingRadius = Math.Max(12, ringRadius - INTEL_BADGE_RING_INSET);
+                double x = centerX + (Math.Cos(angle) * badgeRingRadius) - (INTEL_BADGE_SIZE / 2.0);
+                double y = centerY + (Math.Sin(angle) * badgeRingRadius) - (INTEL_BADGE_SIZE / 2.0);
+
+                Image badge = new Image
+                {
+                    Width = INTEL_BADGE_SIZE,
+                    Height = INTEL_BADGE_SIZE,
+                    Source = GetIntelShipClassIcon(shipClass),
+                    Stretch = Stretch.Uniform,
+                    ToolTip = GetIntelBadgeTooltip(intelData, shipClass),
+                    IsHitTestVisible = false
+                };
+
+                Canvas.SetLeft(badge, x);
+                Canvas.SetTop(badge, y);
+                Canvas.SetZIndex(badge, ZINDEX_INTEL_BADGE);
+
+                parentCanvas.Children.Add(badge);
+            }
+        }
+
+        private static string FormatIntelAge(DateTime intelTime)
+        {
+            TimeSpan age = DateTime.Now - intelTime;
+            if(age.TotalSeconds < 0)
+            {
+                age = TimeSpan.Zero;
+            }
+
+            if(age.TotalMinutes < 1)
+            {
+                return $"{Math.Max(0, (int)age.TotalSeconds)}s ago";
+            }
+
+            if(age.TotalHours < 1)
+            {
+                return $"{(int)age.TotalMinutes}m {age.Seconds:00}s ago";
+            }
+
+            if(age.TotalDays < 1)
+            {
+                return $"{(int)age.TotalHours}h {age.Minutes:00}m ago";
+            }
+
+            return $"{(int)age.TotalDays}d {age.Hours:00}h ago";
+        }
+
+        private static string JoinIntelValues(IEnumerable<string> values, int maxShown)
+        {
+            if(values == null)
+            {
+                return "None";
+            }
+
+            List<string> items = values
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if(items.Count == 0)
+            {
+                return "None";
+            }
+
+            if(items.Count <= maxShown)
+            {
+                return string.Join(", ", items);
+            }
+
+            return $"{string.Join(", ", items.Take(maxShown))} +{items.Count - maxShown}";
+        }
+
+        private static string CompactIntelText(string intelText, int maxLength = 120)
+        {
+            if(string.IsNullOrWhiteSpace(intelText))
+            {
+                return "No text";
+            }
+
+            string compact = intelText.Trim();
+            if(compact.Length <= maxLength)
+            {
+                return compact;
+            }
+
+            return compact.Substring(0, maxLength - 3) + "...";
+        }
+
+        private static int EstimateIntelHostileCount(IntelData intelData)
+        {
+            if(intelData == null)
+            {
+                return 0;
+            }
+
+            int count = 0;
+            if(intelData.ReportedPilots != null)
+            {
+                count = Math.Max(count, intelData.ReportedPilots.Count);
+            }
+
+            if(intelData.ReportedShips != null)
+            {
+                count = Math.Max(count, intelData.ReportedShips.Count);
+            }
+
+            return count;
+        }
+
+        private void AddIntelHoverSection(MapSystem selectedSys, SolidColorBrush popupTextBrush, Thickness one)
+        {
+            if(selectedSys == null || EM == null || EM.IntelDataList == null)
+            {
+                return;
+            }
+
+            List<IntelData> intelForSystem = EM.IntelDataList
+                .Where(i => i != null && i.Systems != null && i.Systems.Any(s => string.Equals(s, selectedSys.Name, StringComparison.OrdinalIgnoreCase)))
+                .OrderByDescending(i => i.IntelTime)
+                .Take(3)
+                .ToList();
+
+            if(intelForSystem.Count == 0)
+            {
+                return;
+            }
+
+            SystemInfoPopupSP.Children.Add(new Separator());
+
+            Label intelHeader = new Label
+            {
+                Padding = one,
+                Margin = one,
+                Content = "Intel Reports",
+                FontWeight = FontWeights.Bold,
+                Foreground = popupTextBrush
+            };
+            SystemInfoPopupSP.Children.Add(intelHeader);
+
+            foreach(IntelData report in intelForSystem)
+            {
+                Border reportCard = new Border
+                {
+                    BorderBrush = new SolidColorBrush(Color.FromArgb(90, popupTextBrush.Color.R, popupTextBrush.Color.G, popupTextBrush.Color.B)),
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(3),
+                    Margin = new Thickness(1, 1, 1, 4),
+                    Padding = new Thickness(2)
+                };
+
+                StackPanel reportBody = new StackPanel();
+
+                string status = report.ClearNotification ? "CLEAR" : "HOSTILE";
+                int hostileCount = EstimateIntelHostileCount(report);
+                string hostileLabel = report.ClearNotification
+                    ? "clear notification"
+                    : hostileCount > 0 ? $"{hostileCount} tracked" : "count unknown";
+
+                Label summary = new Label
+                {
+                    Padding = one,
+                    Margin = new Thickness(0),
+                    Content = $"{status} | {hostileLabel} | {FormatIntelAge(report.IntelTime)}",
+                    Foreground = report.ClearNotification ? new SolidColorBrush(Colors.LightGreen) : popupTextBrush
+                };
+                reportBody.Children.Add(summary);
+
+                if(!report.ClearNotification)
+                {
+                    string classes = report.ReportedShipClasses != null
+                        ? JoinIntelValues(report.ReportedShipClasses.Select(GetIntelShipClassLabel), 4)
+                        : "None";
+
+                    Label classLine = new Label
+                    {
+                        Padding = one,
+                        Margin = new Thickness(0),
+                        Content = $"Classes : {classes}",
+                        Foreground = popupTextBrush
+                    };
+                    reportBody.Children.Add(classLine);
+
+                    Label shipLine = new Label
+                    {
+                        Padding = one,
+                        Margin = new Thickness(0),
+                        Content = $"Ships : {JoinIntelValues(report.ReportedShips, 4)}",
+                        Foreground = popupTextBrush
+                    };
+                    reportBody.Children.Add(shipLine);
+
+                    Label pilotLine = new Label
+                    {
+                        Padding = one,
+                        Margin = new Thickness(0),
+                        Content = $"Pilots : {JoinIntelValues(report.ReportedPilots, 4)}",
+                        Foreground = popupTextBrush
+                    };
+                    reportBody.Children.Add(pilotLine);
+                }
+
+                Label sourceLine = new Label
+                {
+                    Padding = one,
+                    Margin = new Thickness(0),
+                    Content = $"Channel : {report.IntelChannel}",
+                    Foreground = popupTextBrush
+                };
+                reportBody.Children.Add(sourceLine);
+
+                TextBlock textLine = new TextBlock
+                {
+                    Margin = new Thickness(4, 2, 4, 2),
+                    TextWrapping = TextWrapping.Wrap,
+                    Text = $"Intel : {CompactIntelText(report.IntelString)}",
+                    Foreground = popupTextBrush
+                };
+                reportBody.Children.Add(textLine);
+
+                reportCard.Child = reportBody;
+                SystemInfoPopupSP.Children.Add(reportCard);
             }
         }
 
@@ -6318,6 +6699,8 @@ namespace HISA
                     trigInfo.Foreground = popupTextBrush;
                     SystemInfoPopupSP.Children.Add(trigInfo);
                 }
+
+                AddIntelHoverSection(selectedSys, popupTextBrush, one);
 
                 // trigger the hover event
 

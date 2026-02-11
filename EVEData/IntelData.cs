@@ -6,6 +6,36 @@ using System.ComponentModel;
 
 namespace HISA.EVEData
 {
+    public enum IntelShipClass
+    {
+        UnknownHostile,
+        Capsule,
+        Frigate,
+        Destroyer,
+        Cruiser,
+        Battlecruiser,
+        Battleship,
+        Industrial,
+        Mining,
+        Freighter,
+        Capital,
+        Fighter,
+        Structure
+    }
+
+    public enum IntelAlertIconType
+    {
+        HostileShip,
+        Capital,
+        Interdictor,
+        Cyno,
+        GateCamp,
+        Fight,
+        Pod,
+        Clear,
+        Unknown
+    }
+
     /// <summary>
     /// Intel Data, Represents a single line of intel data
     /// </summary>
@@ -34,6 +64,10 @@ namespace HISA.EVEData
             IntelString = intelText.Substring(start);
             IntelTime = DateTime.Now;
             Systems = new List<string>();
+            ReportedShips = new List<string>();
+            ReportedPilots = new List<string>();
+            ReportedShipClasses = new List<IntelShipClass>();
+            AlertIcons = new List<IntelAlertIconType>();
             ClearNotification = false;
             IntelChannel = intelChannel;
         }
@@ -61,6 +95,26 @@ namespace HISA.EVEData
         /// Gets or sets the list of systems we matched when parsing this string
         /// </summary>
         public List<string> Systems { get; set; }
+
+        /// <summary>
+        /// Gets or sets the list of detected ship names mentioned in this intel line
+        /// </summary>
+        public List<string> ReportedShips { get; set; }
+
+        /// <summary>
+        /// Gets or sets the list of detected pilot names mentioned in this intel line
+        /// </summary>
+        public List<string> ReportedPilots { get; set; }
+
+        /// <summary>
+        /// Gets or sets detected ship classes mentioned in this intel line
+        /// </summary>
+        public List<IntelShipClass> ReportedShipClasses { get; set; }
+
+        /// <summary>
+        /// Gets or sets parsed intel markers used to render map alert badges
+        /// </summary>
+        public List<IntelAlertIconType> AlertIcons { get; set; }
 
         // public override string ToString() => "[" + IntelTime.ToString("HH:mm") + "] " + IntelString;
     }

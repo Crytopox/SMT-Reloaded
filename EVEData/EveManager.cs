@@ -89,6 +89,174 @@ namespace HISA.EVEData
         private DateTime NextDotlanUpdate = DateTime.MinValue;
         private DateTime LastDotlanUpdate = DateTime.MinValue;
         private string LastDotlanETAG = "";
+        private readonly object _intelShipPatternLock = new object();
+        private volatile bool _intelShipPatternReady;
+        private Dictionary<string, List<IntelShipPattern>> _intelShipPatternsByFirstToken = new Dictionary<string, List<IntelShipPattern>>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, IntelShipClass> _intelShipClassByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
+
+        private static readonly Regex IntelWordRegex = new Regex(@"[A-Za-z0-9'\-]+", RegexOptions.Compiled);
+        private static readonly Regex IntelPilotTokenRegex = new Regex(@"[A-Za-z][A-Za-z0-9'._\-]{2,}", RegexOptions.Compiled);
+        private static readonly HashSet<string> IntelPilotStopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "hostile", "hostiles", "neut", "neuts", "neutral", "red", "reds", "enemy", "enemies",
+            "fleet", "gang", "clear", "clr", "status", "spike", "spiked", "reported", "report",
+            "gate", "camp", "on", "in", "at", "to", "from", "local", "plus", "with", "is", "are",
+            "jump", "jumped", "out", "inbound", "outbound", "seen", "check", "watch", "comms",
+            "intel", "dscan", "scan", "ship", "ships"
+        };
+
+        private static readonly string[] IntelHostileKeywords =
+        {
+            "hostile", "hostiles", "neut", "neuts", "neutral", "red", "reds", "enemy", "gang", "fleet", "spike", "spiked", "tackle", "tackled", "inbound"
+        };
+
+        private static readonly string[] IntelHostilePhrases =
+        {
+            "in local", "ships in local", "plus in local"
+        };
+
+        private static readonly string[] IntelCapitalKeywords =
+        {
+            "capital", "capitals", "cap", "caps", "carrier", "carriers", "dread", "dreads", "dreadnought", "dreadnoughts", "fax", "faxes", "super", "supers", "supercarrier", "supercarriers", "titan", "titans", "rorq", "rorqual", "rorquals", "jf"
+        };
+
+        private static readonly string[] IntelCapitalPhrases =
+        {
+            "jump freighter"
+        };
+
+        private static readonly string[] IntelFrigateKeywords =
+        {
+            "frig", "frigs", "frigate", "frigates", "ceptor", "ceptrs", "interceptor", "interceptors"
+        };
+
+        private static readonly string[] IntelDestroyerKeywords =
+        {
+            "dessie", "dessies", "destroyer", "destroyers", "dictor", "dictors", "interdictor", "interdictors"
+        };
+
+        private static readonly string[] IntelCruiserKeywords =
+        {
+            "cruiser", "cruisers", "hac", "hacs", "recon", "recons", "hictor", "hictors", "hic"
+        };
+
+        private static readonly string[] IntelBattlecruiserKeywords =
+        {
+            "bc", "bcs", "battlecruiser", "battlecruisers", "commandship", "commandships"
+        };
+
+        private static readonly string[] IntelBattleshipKeywords =
+        {
+            "bs", "battleship", "battleships", "marauder", "marauders"
+        };
+
+        private static readonly string[] IntelIndustrialKeywords =
+        {
+            "industrial", "industrials", "indy", "indies", "hauler", "haulers", "dst", "blockade", "runner"
+        };
+
+        private static readonly string[] IntelFreighterKeywords =
+        {
+            "freighter", "freighters", "jumpfreighter", "jumpfreighters", "jf", "jfs"
+        };
+
+        private static readonly string[] IntelMiningKeywords =
+        {
+            "barge", "barges", "exhumer", "exhumers", "miner", "miners", "venture", "ventures", "procurer", "retriever", "covetor", "skiff", "mackinaw", "hulk"
+        };
+
+        private static readonly string[] IntelFighterKeywords =
+        {
+            "fighter", "fighters", "fighterbomber", "fighterbombers", "squad"
+        };
+
+        private static readonly string[] IntelInterdictorKeywords =
+        {
+            "dictor", "dictors", "interdictor", "interdictors", "hictor", "hictors", "bubble", "bubbles", "sabre", "flycatcher", "heretic", "eris", "onyx", "broadsword", "devoter", "phobos"
+        };
+
+        private static readonly string[] IntelCynoKeywords =
+        {
+            "cyno", "cynos", "beacon", "beacons", "blops", "blackops"
+        };
+
+        private static readonly string[] IntelCynoPhrases =
+        {
+            "covert cyno", "black ops"
+        };
+
+        private static readonly string[] IntelGateCampKeywords =
+        {
+            "camp", "camping", "gatecamp", "pipe"
+        };
+
+        private static readonly string[] IntelGateCampPhrases =
+        {
+            "on gate", "at gate", "in gate"
+        };
+
+        private static readonly string[] IntelFightKeywords =
+        {
+            "fight", "brawl", "engagement", "engaged", "combat", "skirmish"
+        };
+
+        private static readonly string[] IntelPodKeywords =
+        {
+            "pod", "pods", "capsule", "capsules"
+        };
+
+        // Common EVE shorthand that does not reliably appear in invTypes item names.
+        private static readonly Dictionary<string, IntelShipClass> IntelShipClassAliasKeywords = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "kiki", IntelShipClass.Destroyer },
+            { "kikis", IntelShipClass.Destroyer },
+            { "kikimora", IntelShipClass.Destroyer },
+            { "boosh", IntelShipClass.Destroyer },
+            { "boosher", IntelShipClass.Destroyer },
+            { "booshers", IntelShipClass.Destroyer },
+            { "dessie", IntelShipClass.Destroyer },
+            { "dessies", IntelShipClass.Destroyer },
+            { "dictor", IntelShipClass.Destroyer },
+            { "dictors", IntelShipClass.Destroyer },
+            { "inty", IntelShipClass.Frigate },
+            { "inties", IntelShipClass.Frigate },
+            { "ceptor", IntelShipClass.Frigate },
+            { "ceptors", IntelShipClass.Frigate },
+            { "hictor", IntelShipClass.Cruiser },
+            { "hictors", IntelShipClass.Cruiser },
+            { "hic", IntelShipClass.Cruiser },
+            { "hics", IntelShipClass.Cruiser },
+            { "logi", IntelShipClass.Cruiser },
+            { "logis", IntelShipClass.Cruiser },
+            { "scimi", IntelShipClass.Cruiser },
+            { "scimis", IntelShipClass.Cruiser },
+            { "basi", IntelShipClass.Cruiser },
+            { "nado", IntelShipClass.Battlecruiser },
+            { "nados", IntelShipClass.Battlecruiser },
+            { "domi", IntelShipClass.Battleship },
+            { "domis", IntelShipClass.Battleship },
+            { "phoon", IntelShipClass.Battleship },
+            { "phoons", IntelShipClass.Battleship },
+            { "rattle", IntelShipClass.Battleship },
+            { "rattles", IntelShipClass.Battleship },
+            { "mach", IntelShipClass.Battleship },
+            { "machs", IntelShipClass.Battleship },
+            { "bhaal", IntelShipClass.Battleship },
+            { "vindi", IntelShipClass.Battleship },
+            { "rorq", IntelShipClass.Capital },
+            { "rorqs", IntelShipClass.Capital },
+            { "fax", IntelShipClass.Capital },
+            { "faxes", IntelShipClass.Capital },
+            { "jf", IntelShipClass.Freighter },
+            { "jfs", IntelShipClass.Freighter }
+        };
+
+        private sealed class IntelShipPattern
+        {
+            public string Name { get; set; }
+            public string[] Tokens { get; set; }
+            public IntelShipClass ShipClass { get; set; }
+        }
 
 
         /// <summary>
@@ -1511,6 +1679,9 @@ namespace HISA.EVEData
             if(File.Exists(eveStaticDataItemTypesFile))
             {
                 ShipTypes = new SerializableDictionary<string, string>();
+                _intelShipClassByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
+                _intelShipPatternsByFirstToken = new Dictionary<string, List<IntelShipPattern>>(StringComparer.OrdinalIgnoreCase);
+                _intelShipPatternReady = false;
 
                 List<string> ValidShipGroupIDs = new List<string>();
 
@@ -1617,6 +1788,12 @@ namespace HISA.EVEData
                     if(ValidShipGroupIDs.Contains(groupID))
                     {
                         ShipTypes.Add(typeID, ItemName);
+
+                        IntelShipClass shipClass = GetIntelShipClassFromGroupId(groupID);
+                        if(!_intelShipClassByName.ContainsKey(ItemName))
+                        {
+                            _intelShipClassByName.Add(ItemName, shipClass);
+                        }
                     }
                 }
             }
@@ -4403,6 +4580,764 @@ namespace HISA.EVEData
             ZKillFeed.Initialise();
         }
 
+        private static List<string> TokenizeIntelWords(string text)
+        {
+            List<string> words = new List<string>();
+            if(string.IsNullOrWhiteSpace(text))
+            {
+                return words;
+            }
+
+            MatchCollection matches = IntelWordRegex.Matches(text.ToLowerInvariant());
+            foreach(Match m in matches)
+            {
+                if(!string.IsNullOrWhiteSpace(m.Value))
+                {
+                    words.Add(m.Value);
+                }
+            }
+
+            return words;
+        }
+
+        private static bool IsKeywordSequenceMatch(IReadOnlyList<string> tokens, int startIndex, string[] sequence)
+        {
+            if(startIndex < 0 || sequence == null || startIndex + sequence.Length > tokens.Count)
+            {
+                return false;
+            }
+
+            for(int i = 0; i < sequence.Length; i++)
+            {
+                if(!IsIntelTokenEquivalent(tokens[startIndex + i], sequence[i]))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsIntelTokenEquivalent(string token, string expected)
+        {
+            if(string.Equals(token, expected, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if(string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(expected))
+            {
+                return false;
+            }
+
+            if(token.Length == expected.Length + 1
+                && token.EndsWith("s", StringComparison.OrdinalIgnoreCase)
+                && token.StartsWith(expected, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if(token.Length == expected.Length + 2
+                && token.EndsWith("es", StringComparison.OrdinalIgnoreCase)
+                && token.StartsWith(expected, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryResolveIntelShipAlias(string token, out IntelShipClass shipClass)
+        {
+            shipClass = IntelShipClass.UnknownHostile;
+            if(string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            if(IntelShipClassAliasKeywords.TryGetValue(token, out shipClass))
+            {
+                return true;
+            }
+
+            if(token.Length > 4 && token.EndsWith("es", StringComparison.OrdinalIgnoreCase))
+            {
+                string singularEs = token.Substring(0, token.Length - 2);
+                if(IntelShipClassAliasKeywords.TryGetValue(singularEs, out shipClass))
+                {
+                    return true;
+                }
+            }
+
+            if(token.Length > 3 && token.EndsWith("s", StringComparison.OrdinalIgnoreCase))
+            {
+                string singularS = token.Substring(0, token.Length - 1);
+                if(IntelShipClassAliasKeywords.TryGetValue(singularS, out shipClass))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsAnyIntelKeyword(ISet<string> tokenSet, IEnumerable<string> keywords)
+        {
+            foreach(string keyword in keywords)
+            {
+                if(tokenSet.Contains(keyword))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsAnyIntelPhrase(string textLower, IEnumerable<string> phrases)
+        {
+            foreach(string phrase in phrases)
+            {
+                if(textLower.IndexOf(phrase, StringComparison.Ordinal) != -1)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void ApplyIntelShipAliasHints(IntelData intelData, IReadOnlyList<string> tokens)
+        {
+            if(intelData == null || tokens == null || tokens.Count == 0)
+            {
+                return;
+            }
+
+            foreach(string token in tokens)
+            {
+                if(TryResolveIntelShipAlias(token, out IntelShipClass shipClass))
+                {
+                    AddShipClassIfMissing(intelData, shipClass);
+                }
+            }
+        }
+
+        private static bool LooksLikeSystemToken(string token)
+        {
+            if(string.IsNullOrWhiteSpace(token))
+            {
+                return false;
+            }
+
+            bool hasDigit = token.Any(char.IsDigit);
+            bool hasHyphen = token.Contains('-');
+            if(hasDigit && hasHyphen)
+            {
+                return true;
+            }
+
+            int mapTokenChars = token.Count(ch => char.IsUpper(ch) || char.IsDigit(ch) || ch == '-');
+            return token.Length >= 4 && mapTokenChars == token.Length;
+        }
+
+        private List<string> DetectPilotMentionsFromIntel(string intelText, IReadOnlyCollection<string> matchedSystems)
+        {
+            List<string> pilots = new List<string>();
+            if(string.IsNullOrWhiteSpace(intelText))
+            {
+                return pilots;
+            }
+
+            HashSet<string> matchedSystemSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if(matchedSystems != null)
+            {
+                foreach(string systemName in matchedSystems)
+                {
+                    if(!string.IsNullOrWhiteSpace(systemName))
+                    {
+                        matchedSystemSet.Add(systemName);
+                    }
+                }
+            }
+
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            MatchCollection matches = IntelPilotTokenRegex.Matches(intelText);
+            foreach(Match match in matches)
+            {
+                string token = match.Value;
+                if(string.IsNullOrWhiteSpace(token) || token.Length < 3)
+                {
+                    continue;
+                }
+
+                if(token.All(char.IsDigit))
+                {
+                    continue;
+                }
+
+                if(!token.Any(char.IsUpper))
+                {
+                    continue;
+                }
+
+                if(IntelPilotStopWords.Contains(token))
+                {
+                    continue;
+                }
+
+                if(LooksLikeSystemToken(token))
+                {
+                    continue;
+                }
+
+                if(matchedSystemSet.Contains(token))
+                {
+                    continue;
+                }
+
+                if(NameToSystem.ContainsKey(token))
+                {
+                    continue;
+                }
+
+                if(_intelShipClassByName.ContainsKey(token))
+                {
+                    continue;
+                }
+
+                if(seen.Add(token))
+                {
+                    pilots.Add(token);
+                }
+
+                if(pilots.Count >= 24)
+                {
+                    break;
+                }
+            }
+
+            return pilots;
+        }
+
+        private void ReconcilePilotMovementIntel(IntelData latestIntel)
+        {
+            if(latestIntel == null || latestIntel.ClearNotification || IntelDataList == null)
+            {
+                return;
+            }
+
+            if(latestIntel.ReportedPilots == null || latestIntel.ReportedPilots.Count == 0)
+            {
+                return;
+            }
+
+            if(latestIntel.Systems == null || latestIntel.Systems.Count == 0)
+            {
+                return;
+            }
+
+            HashSet<string> newPilotSet = new HashSet<string>(latestIntel.ReportedPilots, StringComparer.OrdinalIgnoreCase);
+            HashSet<string> newSystemSet = new HashSet<string>(latestIntel.Systems, StringComparer.OrdinalIgnoreCase);
+            List<IntelData> staleIntelEntries = new List<IntelData>();
+
+            foreach(IntelData existingIntel in IntelDataList.ToList())
+            {
+                if(existingIntel == null || existingIntel.ClearNotification)
+                {
+                    continue;
+                }
+
+                if(existingIntel.ReportedPilots == null || existingIntel.ReportedPilots.Count == 0)
+                {
+                    continue;
+                }
+
+                if(existingIntel.Systems == null || existingIntel.Systems.Count == 0)
+                {
+                    continue;
+                }
+
+                bool sharesPilot = existingIntel.ReportedPilots.Any(pilotName => newPilotSet.Contains(pilotName));
+                if(!sharesPilot)
+                {
+                    continue;
+                }
+
+                bool sameSystem = existingIntel.Systems.Any(systemName => newSystemSet.Contains(systemName));
+                if(sameSystem)
+                {
+                    continue;
+                }
+
+                existingIntel.Systems.Clear();
+                staleIntelEntries.Add(existingIntel);
+            }
+
+            foreach(IntelData staleIntel in staleIntelEntries)
+            {
+                IntelDataList.Remove(staleIntel);
+            }
+        }
+
+        private static void AddAlertIconIfMissing(IntelData intelData, IntelAlertIconType iconType)
+        {
+            if(!intelData.AlertIcons.Contains(iconType))
+            {
+                intelData.AlertIcons.Add(iconType);
+            }
+        }
+
+        private static void AddShipClassIfMissing(IntelData intelData, IntelShipClass shipClass)
+        {
+            if(shipClass == IntelShipClass.UnknownHostile)
+            {
+                if(intelData.ReportedShipClasses.Count == 0)
+                {
+                    intelData.ReportedShipClasses.Add(shipClass);
+                }
+                return;
+            }
+
+            if(!intelData.ReportedShipClasses.Contains(shipClass))
+            {
+                intelData.ReportedShipClasses.Add(shipClass);
+            }
+        }
+
+        private static IntelShipClass GetIntelShipClassFromGroupId(string groupID)
+        {
+            switch(groupID)
+            {
+                case "29":  // Capsule
+                    return IntelShipClass.Capsule;
+
+                case "25":  // Frigate
+                case "237": // Corvette
+                case "324": // Assault Frigate
+                case "830": // Covert Ops
+                case "831": // Interceptor
+                case "1283": // Expedition Frigate
+                case "1527": // Logistics Frigate
+                    return IntelShipClass.Frigate;
+
+                case "420": // Destroyer
+                case "541": // Interdictor
+                case "1305": // Tactical Destroyer
+                case "1534": // Command Destroyer
+                    return IntelShipClass.Destroyer;
+
+                case "26":  // Cruiser
+                case "358": // HAC
+                case "832": // Logistics
+                case "833": // Force Recon
+                case "893": // Electronic Attack Ship
+                case "894": // HIC
+                case "906": // Combat Recon
+                case "963": // Strategic Cruiser
+                case "1972": // Flag Cruiser
+                    return IntelShipClass.Cruiser;
+
+                case "419": // Combat BC
+                case "540": // Command Ship
+                case "1201": // Attack BC
+                    return IntelShipClass.Battlecruiser;
+
+                case "27":  // Battleship
+                case "381": // Elite Battleship
+                case "898": // Black Ops
+                case "900": // Marauder
+                    return IntelShipClass.Battleship;
+
+                case "28":  // Industrial
+                case "380": // DST
+                case "1202": // Blockade Runner
+                case "941": // Industrial Command
+                    return IntelShipClass.Industrial;
+
+                case "463": // Mining Barge
+                case "543": // Exhumer
+                    return IntelShipClass.Mining;
+
+                case "513": // Freighter
+                case "902": // Jump Freighter
+                    return IntelShipClass.Freighter;
+
+                case "30":  // Titan
+                case "485": // Dreadnought
+                case "547": // Carrier
+                case "659": // Supercarrier
+                case "883": // Capital Industrial
+                case "1538": // FAX
+                    return IntelShipClass.Capital;
+
+                case "1537": // Support Fighter
+                case "1652": // Light Fighter
+                case "1653": // Heavy Fighter
+                    return IntelShipClass.Fighter;
+
+                case "1312":
+                case "1404":
+                case "1405":
+                case "1406":
+                case "1407":
+                case "1408":
+                case "1409":
+                case "1410":
+                case "1657":
+                case "1876":
+                case "1924":
+                    return IntelShipClass.Structure;
+
+                default:
+                    return IntelShipClass.UnknownHostile;
+            }
+        }
+
+        private static IntelShipClass GuessShipClassFromShipName(string shipName)
+        {
+            if(string.IsNullOrWhiteSpace(shipName))
+            {
+                return IntelShipClass.UnknownHostile;
+            }
+
+            List<string> tokens = TokenizeIntelWords(shipName);
+            HashSet<string> tokenSet = new HashSet<string>(tokens, StringComparer.OrdinalIgnoreCase);
+            string textLower = shipName.ToLowerInvariant();
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelCapitalKeywords) || ContainsAnyIntelPhrase(textLower, IntelCapitalPhrases))
+            {
+                return IntelShipClass.Capital;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFreighterKeywords))
+            {
+                return IntelShipClass.Freighter;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelBattleshipKeywords))
+            {
+                return IntelShipClass.Battleship;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelBattlecruiserKeywords))
+            {
+                return IntelShipClass.Battlecruiser;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelCruiserKeywords))
+            {
+                return IntelShipClass.Cruiser;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelDestroyerKeywords))
+            {
+                return IntelShipClass.Destroyer;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFrigateKeywords))
+            {
+                return IntelShipClass.Frigate;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelIndustrialKeywords))
+            {
+                return IntelShipClass.Industrial;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelMiningKeywords))
+            {
+                return IntelShipClass.Mining;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFighterKeywords))
+            {
+                return IntelShipClass.Fighter;
+            }
+            if(ContainsAnyIntelKeyword(tokenSet, IntelPodKeywords))
+            {
+                return IntelShipClass.Capsule;
+            }
+
+            return IntelShipClass.UnknownHostile;
+        }
+
+        private void EnsureIntelShipPatternIndex()
+        {
+            if(_intelShipPatternReady)
+            {
+                return;
+            }
+
+            lock(_intelShipPatternLock)
+            {
+                if(_intelShipPatternReady)
+                {
+                    return;
+                }
+
+                Dictionary<string, List<IntelShipPattern>> shipPatterns = new Dictionary<string, List<IntelShipPattern>>(StringComparer.OrdinalIgnoreCase);
+                HashSet<string> uniqueNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                if(ShipTypes != null)
+                {
+                    foreach(string shipName in ShipTypes.Values)
+                    {
+                        if(string.IsNullOrWhiteSpace(shipName) || !uniqueNames.Add(shipName))
+                        {
+                            continue;
+                        }
+
+                        List<string> tokens = TokenizeIntelWords(shipName);
+                        if(tokens.Count == 0 || tokens.Count > 5)
+                        {
+                            continue;
+                        }
+
+                        // Ignore very short one-word tokens as they create too much noise.
+                        if(tokens.Count == 1 && tokens[0].Length < 4)
+                        {
+                            continue;
+                        }
+
+                        string firstToken = tokens[0];
+                        if(!shipPatterns.TryGetValue(firstToken, out List<IntelShipPattern> patterns))
+                        {
+                            patterns = new List<IntelShipPattern>();
+                            shipPatterns[firstToken] = patterns;
+                        }
+
+                        patterns.Add(new IntelShipPattern
+                        {
+                            Name = shipName,
+                            Tokens = tokens.ToArray(),
+                            ShipClass = _intelShipClassByName.TryGetValue(shipName, out IntelShipClass shipClass) ? shipClass : GuessShipClassFromShipName(shipName)
+                        });
+                    }
+                }
+
+                foreach(List<IntelShipPattern> patterns in shipPatterns.Values)
+                {
+                    patterns.Sort((a, b) =>
+                    {
+                        int cmp = b.Tokens.Length.CompareTo(a.Tokens.Length);
+                        if(cmp != 0)
+                        {
+                            return cmp;
+                        }
+
+                        return b.Name.Length.CompareTo(a.Name.Length);
+                    });
+                }
+
+                _intelShipPatternsByFirstToken = shipPatterns;
+                _intelShipPatternReady = true;
+            }
+        }
+
+        private List<string> DetectShipMentionsFromIntel(List<string> tokens)
+        {
+            EnsureIntelShipPatternIndex();
+
+            List<string> foundShips = new List<string>();
+            HashSet<string> seenShips = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if(!_intelShipPatternReady || tokens.Count == 0)
+            {
+                return foundShips;
+            }
+
+            for(int i = 0; i < tokens.Count; i++)
+            {
+                if(!_intelShipPatternsByFirstToken.TryGetValue(tokens[i], out List<IntelShipPattern> patterns))
+                {
+                    continue;
+                }
+
+                foreach(IntelShipPattern pattern in patterns)
+                {
+                    if(!IsKeywordSequenceMatch(tokens, i, pattern.Tokens))
+                    {
+                        continue;
+                    }
+
+                    if(seenShips.Add(pattern.Name))
+                    {
+                        foundShips.Add(pattern.Name);
+                    }
+
+                    i += pattern.Tokens.Length - 1;
+                    break;
+                }
+            }
+
+            return foundShips;
+        }
+
+        private void PopulateIntelMetadata(IntelData id)
+        {
+            if(id == null)
+            {
+                return;
+            }
+
+            id.ClearNotification = false;
+            id.Systems.Clear();
+            id.ReportedShips.Clear();
+            id.ReportedPilots.Clear();
+            id.ReportedShipClasses.Clear();
+            id.AlertIcons.Clear();
+
+            string intelText = id.IntelString ?? string.Empty;
+            string intelLower = intelText.ToLowerInvariant();
+            List<string> tokens = TokenizeIntelWords(intelText);
+            HashSet<string> tokenSet = new HashSet<string>(tokens, StringComparer.OrdinalIgnoreCase);
+
+            foreach(string token in tokens)
+            {
+                if(token.Length < 3)
+                {
+                    continue;
+                }
+
+                foreach(string clearMarker in IntelClearFilters)
+                {
+                    if(clearMarker.IndexOf(token, StringComparison.OrdinalIgnoreCase) == 0)
+                    {
+                        id.ClearNotification = true;
+                        break;
+                    }
+                }
+
+                if(Systems == null)
+                {
+                    continue;
+                }
+
+                foreach(System sys in Systems)
+                {
+                    if(sys.Name.IndexOf(token, StringComparison.OrdinalIgnoreCase) == 0 || token.IndexOf(sys.Name, StringComparison.OrdinalIgnoreCase) == 0)
+                    {
+                        if(!id.Systems.Contains(sys.Name))
+                        {
+                            id.Systems.Add(sys.Name);
+                        }
+                    }
+                }
+            }
+
+            List<string> detectedShips = DetectShipMentionsFromIntel(tokens);
+            foreach(string shipName in detectedShips.Take(24))
+            {
+                id.ReportedShips.Add(shipName);
+                IntelShipClass shipClass = _intelShipClassByName.TryGetValue(shipName, out IntelShipClass mappedClass)
+                    ? mappedClass
+                    : GuessShipClassFromShipName(shipName);
+
+                if(shipClass != IntelShipClass.UnknownHostile)
+                {
+                    AddShipClassIfMissing(id, shipClass);
+                }
+            }
+
+            ApplyIntelShipAliasHints(id, tokens);
+
+            List<string> detectedPilots = DetectPilotMentionsFromIntel(intelText, id.Systems);
+            foreach(string pilotName in detectedPilots)
+            {
+                id.ReportedPilots.Add(pilotName);
+            }
+
+            bool hasHostiles = id.ReportedShips.Count > 0 ||
+                               id.ReportedPilots.Count > 0 ||
+                               ContainsAnyIntelKeyword(tokenSet, IntelHostileKeywords) ||
+                               ContainsAnyIntelPhrase(intelLower, IntelHostilePhrases);
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFrigateKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Frigate);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelDestroyerKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Destroyer);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelCruiserKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Cruiser);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelBattlecruiserKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Battlecruiser);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelBattleshipKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Battleship);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelIndustrialKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Industrial);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFreighterKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Freighter);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelMiningKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Mining);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFighterKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Fighter);
+            }
+
+            if(id.ClearNotification)
+            {
+                AddAlertIconIfMissing(id, IntelAlertIconType.Clear);
+            }
+
+            if(hasHostiles)
+            {
+                AddAlertIconIfMissing(id, IntelAlertIconType.HostileShip);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelCapitalKeywords) || ContainsAnyIntelPhrase(intelLower, IntelCapitalPhrases))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Capital);
+                AddAlertIconIfMissing(id, IntelAlertIconType.Capital);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelInterdictorKeywords))
+            {
+                AddAlertIconIfMissing(id, IntelAlertIconType.Interdictor);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelCynoKeywords) || ContainsAnyIntelPhrase(intelLower, IntelCynoPhrases))
+            {
+                AddAlertIconIfMissing(id, IntelAlertIconType.Cyno);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelGateCampKeywords) || ContainsAnyIntelPhrase(intelLower, IntelGateCampPhrases))
+            {
+                AddAlertIconIfMissing(id, IntelAlertIconType.GateCamp);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelFightKeywords))
+            {
+                AddAlertIconIfMissing(id, IntelAlertIconType.Fight);
+            }
+
+            if(ContainsAnyIntelKeyword(tokenSet, IntelPodKeywords))
+            {
+                AddShipClassIfMissing(id, IntelShipClass.Capsule);
+                AddAlertIconIfMissing(id, IntelAlertIconType.Pod);
+            }
+
+            if(hasHostiles && id.ReportedShipClasses.Count == 0 && !id.ClearNotification)
+            {
+                AddShipClassIfMissing(id, IntelShipClass.UnknownHostile);
+            }
+
+        }
+
         /// <summary>
         /// Intel File watcher changed handler
         /// </summary>
@@ -4589,30 +5524,8 @@ namespace HISA.EVEData
                             if(addToIntel)
                             {
                                 EVEData.IntelData id = new EVEData.IntelData(line, channelName);
-
-                                foreach(string s in id.IntelString.Split(' '))
-                                {
-                                    if(s == "" || s.Length < 3)
-                                    {
-                                        continue;
-                                    }
-
-                                    foreach(String clearMarker in IntelClearFilters)
-                                    {
-                                        if(clearMarker.IndexOf(s, StringComparison.OrdinalIgnoreCase) == 0)
-                                        {
-                                            id.ClearNotification = true;
-                                        }
-                                    }
-
-                                    foreach(System sys in Systems)
-                                    {
-                                        if(sys.Name.IndexOf(s, StringComparison.OrdinalIgnoreCase) == 0 || s.IndexOf(sys.Name, StringComparison.OrdinalIgnoreCase) == 0)
-                                        {
-                                            id.Systems.Add(sys.Name);
-                                        }
-                                    }
-                                }
+                                PopulateIntelMetadata(id);
+                                ReconcilePilotMovementIntel(id);
 
                                 IntelDataList.Enqueue(id);
 
@@ -5416,8 +6329,9 @@ namespace HISA.EVEData
                     continue;
                 }
 
-                // Check if this line starts with a digit (upgrade line)
-                bool isUpgradeLine = char.IsDigit(trimmedLine.FirstOrDefault());
+                // Only treat as an upgrade row when the line actually matches "slot ... Online/Offline".
+                // This avoids mis-parsing system names like "0-W778" as upgrades.
+                bool isUpgradeLine = IsInfrastructureUpgradeLine(trimmedLine);
 
                 if (!isUpgradeLine)
                 {
@@ -5490,6 +6404,37 @@ namespace HISA.EVEData
                     }
                 }
             }
+        }
+
+        private static bool IsInfrastructureUpgradeLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return false;
+            }
+
+            string trimmedLine = line.Trim();
+            int firstSeparatorIndex = trimmedLine.IndexOfAny(new[] { '\t', ' ' });
+            if (firstSeparatorIndex <= 0)
+            {
+                return false;
+            }
+
+            string firstToken = trimmedLine.Substring(0, firstSeparatorIndex);
+            if (!int.TryParse(firstToken, out _))
+            {
+                return false;
+            }
+
+            string[] parts = trimmedLine.Split(new[] { '\t', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3)
+            {
+                return false;
+            }
+
+            string status = parts[parts.Length - 1];
+            return status.Equals("Online", StringComparison.OrdinalIgnoreCase) ||
+                   status.Equals("Offline", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
