@@ -890,6 +890,14 @@ namespace HISA
             ESIOverlayScale = MapConf.ToolBox_ESIOverlayScale;
 
             SelectRegion(MapConf.DefaultRegion);
+            if(Region == null)
+            {
+                string fallbackRegion = EM.Regions?.FirstOrDefault()?.Name;
+                if(!string.IsNullOrWhiteSpace(fallbackRegion))
+                {
+                    SelectRegion(fallbackRegion);
+                }
+            }
 
             uiRefreshTimer = new System.Windows.Threading.DispatcherTimer();
             uiRefreshTimer.Tick += UiRefreshTimer_Tick; ;
@@ -898,7 +906,9 @@ namespace HISA
 
             DataContext = this;
 
-            List<EVEData.MapSystem> newList = Region.MapSystems.Values.ToList().OrderBy(o => o.Name).ToList();
+            List<EVEData.MapSystem> newList = Region != null
+                ? Region.MapSystems.Values.ToList().OrderBy(o => o.Name).ToList()
+                : new List<EVEData.MapSystem>();
             SystemDropDownAC.ItemsSource = newList;
 
             PropertyChanged += MapObjectChanged;
@@ -910,6 +920,8 @@ namespace HISA
             {
                 return;
             }
+
+            string selectedRegionName = Region?.Name;
 
             foreach(MapRegion r in EM.Regions)
             {
@@ -930,7 +942,20 @@ namespace HISA
             cvs.GroupDescriptions.Add(new PropertyGroupDescription("GroupName"));
             cvs.SortDescriptions.Add(new SortDescription("GroupSortKey", ListSortDirection.Ascending));
             cvs.SortDescriptions.Add(new SortDescription("Name", ListSortDirection.Ascending));
-            RegionSelectCB.ItemsSource = cvs.View;
+
+            m_SuppressRegionComboSelectionPersistence = true;
+            try
+            {
+                RegionSelectCB.ItemsSource = cvs.View;
+                if(!string.IsNullOrWhiteSpace(selectedRegionName))
+                {
+                    RegionSelectCB.SelectedItem = EM.GetRegion(selectedRegionName);
+                }
+            }
+            finally
+            {
+                m_SuppressRegionComboSelectionPersistence = false;
+            }
         }
 
         /// <summary>
@@ -4524,6 +4549,10 @@ namespace HISA
         private void RegionSelectCB_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             FollowCharacter = false;
+            if(m_SuppressRegionComboSelectionPersistence)
+            {
+                return;
+            }
 
             EVEData.MapRegion rd = RegionSelectCB.SelectedItem as EVEData.MapRegion;
             if(rd == null)
@@ -4531,11 +4560,7 @@ namespace HISA
                 return;
             }
 
-            if(!m_SuppressRegionComboSelectionPersistence)
-            {
-                PersistLastSelectedRegion(rd.Name);
-            }
-
+            PersistLastSelectedRegion(rd.Name);
             SelectRegion(rd.Name);
         }
 
