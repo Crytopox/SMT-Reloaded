@@ -100,10 +100,12 @@ namespace HISA.EVEData
         {
             "hostile", "hostiles", "neut", "neuts", "neutral", "red", "reds", "enemy", "enemies",
             "fleet", "gang", "clear", "clr", "status", "spike", "spiked", "reported", "report",
+            "reports",
             "gate", "camp", "on", "in", "at", "to", "from", "local", "plus", "with", "is", "are",
             "jump", "jumped", "out", "inbound", "outbound", "seen", "check", "watch", "comms",
             "intel", "dscan", "scan", "ship", "ships"
         };
+        private static readonly TimeSpan IntelPilotEnrichmentWindow = TimeSpan.FromSeconds(30);
 
         private static readonly string[] IntelHostileKeywords =
         {
@@ -256,6 +258,13 @@ namespace HISA.EVEData
             public string Name { get; set; }
             public string[] Tokens { get; set; }
             public IntelShipClass ShipClass { get; set; }
+        }
+
+        private sealed class IntelPilotToken
+        {
+            public string Value { get; set; }
+            public int Index { get; set; }
+            public int Length { get; set; }
         }
 
 
@@ -4741,7 +4750,34 @@ namespace HISA.EVEData
             return token.Length >= 4 && mapTokenChars == token.Length;
         }
 
-        private List<string> DetectPilotMentionsFromIntel(string intelText, IReadOnlyCollection<string> matchedSystems)
+        private static HashSet<string> BuildIntelShipWordSet(IReadOnlyCollection<string> reportedShips)
+        {
+            HashSet<string> shipWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if(reportedShips == null)
+            {
+                return shipWords;
+            }
+
+            foreach(string shipName in reportedShips)
+            {
+                if(string.IsNullOrWhiteSpace(shipName))
+                {
+                    continue;
+                }
+
+                foreach(Match m in IntelPilotTokenRegex.Matches(shipName))
+                {
+                    if(!string.IsNullOrWhiteSpace(m.Value))
+                    {
+                        shipWords.Add(m.Value);
+                    }
+                }
+            }
+
+            return shipWords;
+        }
+
+        private List<string> DetectPilotMentionsFromIntel(string intelText, IReadOnlyCollection<string> matchedSystems, IReadOnlyCollection<string> reportedShips)
         {
             List<string> pilots = new List<string>();
             if(string.IsNullOrWhiteSpace(intelText))
@@ -4761,56 +4797,112 @@ namespace HISA.EVEData
                 }
             }
 
+            HashSet<string> shipWords = BuildIntelShipWordSet(reportedShips);
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            List<IntelPilotToken> pilotTokens = new List<IntelPilotToken>();
             MatchCollection matches = IntelPilotTokenRegex.Matches(intelText);
             foreach(Match match in matches)
             {
-                string token = match.Value;
+                pilotTokens.Add(new IntelPilotToken
+                {
+                    Value = match.Value,
+                    Index = match.Index,
+                    Length = match.Length
+                });
+            }
+
+            bool IsCandidatePilotToken(string token)
+            {
                 if(string.IsNullOrWhiteSpace(token) || token.Length < 3)
                 {
-                    continue;
+                    return false;
                 }
 
                 if(token.All(char.IsDigit))
                 {
-                    continue;
+                    return false;
                 }
 
                 if(!token.Any(char.IsUpper))
                 {
-                    continue;
+                    return false;
                 }
 
                 if(IntelPilotStopWords.Contains(token))
                 {
-                    continue;
+                    return false;
                 }
 
                 if(LooksLikeSystemToken(token))
                 {
-                    continue;
+                    return false;
                 }
 
                 if(matchedSystemSet.Contains(token))
                 {
-                    continue;
+                    return false;
                 }
 
                 if(NameToSystem.ContainsKey(token))
                 {
-                    continue;
+                    return false;
                 }
 
                 if(_intelShipClassByName.ContainsKey(token))
                 {
+                    return false;
+                }
+
+                if(shipWords.Contains(token))
+                {
+                    return false;
+                }
+
+                return true;
+            }
+
+            for(int i = 0; i < pilotTokens.Count; i++)
+            {
+                IntelPilotToken token = pilotTokens[i];
+                if(!IsCandidatePilotToken(token.Value))
+                {
                     continue;
                 }
 
-                if(seen.Add(token))
+                string mention = token.Value;
+                int lastTokenIndex = i;
+
+                // EVE pilot names frequently have spaces, so combine adjacent candidate tokens.
+                for(int j = i + 1; j < pilotTokens.Count && j <= i + 2; j++)
                 {
-                    pilots.Add(token);
+                    IntelPilotToken nextToken = pilotTokens[j];
+                    if(!IsCandidatePilotToken(nextToken.Value))
+                    {
+                        break;
+                    }
+
+                    int gapStart = pilotTokens[lastTokenIndex].Index + pilotTokens[lastTokenIndex].Length;
+                    int gapLength = nextToken.Index - gapStart;
+                    if(gapLength < 0)
+                    {
+                        break;
+                    }
+
+                    if(!string.IsNullOrWhiteSpace(intelText.Substring(gapStart, gapLength)))
+                    {
+                        break;
+                    }
+
+                    mention += " " + nextToken.Value;
+                    lastTokenIndex = j;
                 }
 
+                if(seen.Add(mention))
+                {
+                    pilots.Add(mention);
+                }
+
+                i = lastTokenIndex;
                 if(pilots.Count >= 24)
                 {
                     break;
@@ -4818,6 +4910,101 @@ namespace HISA.EVEData
             }
 
             return pilots;
+        }
+
+        private void EnrichRecentPilotShipIntel(IntelData latestIntel)
+        {
+            if(latestIntel == null || latestIntel.ClearNotification || IntelDataList == null)
+            {
+                return;
+            }
+
+            if(latestIntel.ReportedPilots == null || latestIntel.ReportedPilots.Count == 0)
+            {
+                return;
+            }
+
+            bool hasShipDetails = (latestIntel.ReportedShips?.Count ?? 0) > 0 ||
+                                  (latestIntel.ReportedShipClasses?.Any(shipClass => shipClass != IntelShipClass.UnknownHostile) ?? false);
+            if(!hasShipDetails)
+            {
+                return;
+            }
+
+            HashSet<string> latestPilots = new HashSet<string>(latestIntel.ReportedPilots, StringComparer.OrdinalIgnoreCase);
+            DateTime minIntelTime = latestIntel.IntelTime - IntelPilotEnrichmentWindow;
+
+            foreach(IntelData existingIntel in IntelDataList.ToList())
+            {
+                if(existingIntel == null || existingIntel.ClearNotification)
+                {
+                    continue;
+                }
+
+                if(existingIntel.Systems == null || existingIntel.Systems.Count == 0)
+                {
+                    continue;
+                }
+
+                if(existingIntel.ReportedPilots == null || existingIntel.ReportedPilots.Count == 0)
+                {
+                    continue;
+                }
+
+                if(existingIntel.IntelTime < minIntelTime)
+                {
+                    continue;
+                }
+
+                bool sharesPilot = existingIntel.ReportedPilots.Any(pilotName => latestPilots.Contains(pilotName));
+                if(!sharesPilot)
+                {
+                    continue;
+                }
+
+                bool intelUpdated = false;
+
+                foreach(string shipName in latestIntel.ReportedShips ?? Enumerable.Empty<string>())
+                {
+                    if(string.IsNullOrWhiteSpace(shipName))
+                    {
+                        continue;
+                    }
+
+                    if(!existingIntel.ReportedShips.Contains(shipName, StringComparer.OrdinalIgnoreCase))
+                    {
+                        existingIntel.ReportedShips.Add(shipName);
+                        intelUpdated = true;
+                    }
+                }
+
+                foreach(IntelShipClass shipClass in latestIntel.ReportedShipClasses ?? Enumerable.Empty<IntelShipClass>())
+                {
+                    if(shipClass == IntelShipClass.UnknownHostile)
+                    {
+                        continue;
+                    }
+
+                    if(!existingIntel.ReportedShipClasses.Contains(shipClass))
+                    {
+                        existingIntel.ReportedShipClasses.Add(shipClass);
+                        intelUpdated = true;
+                    }
+                }
+
+                if(!intelUpdated)
+                {
+                    continue;
+                }
+
+                AddAlertIconIfMissing(existingIntel, IntelAlertIconType.HostileShip);
+                if(existingIntel.ReportedShipClasses.Count == 0)
+                {
+                    AddShipClassIfMissing(existingIntel, IntelShipClass.UnknownHostile);
+                }
+
+                existingIntel.IntelTime = latestIntel.IntelTime;
+            }
         }
 
         private void ReconcilePilotMovementIntel(IntelData latestIntel)
@@ -5233,7 +5420,7 @@ namespace HISA.EVEData
 
             ApplyIntelShipAliasHints(id, tokens);
 
-            List<string> detectedPilots = DetectPilotMentionsFromIntel(intelText, id.Systems);
+            List<string> detectedPilots = DetectPilotMentionsFromIntel(intelText, id.Systems, id.ReportedShips);
             foreach(string pilotName in detectedPilots)
             {
                 id.ReportedPilots.Add(pilotName);
@@ -5526,6 +5713,7 @@ namespace HISA.EVEData
                                 EVEData.IntelData id = new EVEData.IntelData(line, channelName);
                                 PopulateIntelMetadata(id);
                                 ReconcilePilotMovementIntel(id);
+                                EnrichRecentPilotShipIntel(id);
 
                                 IntelDataList.Enqueue(id);
 

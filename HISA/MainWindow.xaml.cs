@@ -1782,6 +1782,7 @@ namespace HISA
             }
 
             IntelData id = IntelCache[0];
+            bool hasKnownSystem = id.Systems != null && id.Systems.Count > 0;
 
             if(id.ClearNotification)
             {
@@ -1789,7 +1790,7 @@ namespace HISA
                 return;
             }
 
-            if(MapConf.PlayIntelSoundOnUnknown && id.Systems.Count == 0)
+            if(MapConf.PlayIntelSoundOnUnknown && !hasKnownSystem)
             {
                 playSound = true;
                 flashWindow = true;
@@ -1829,7 +1830,8 @@ namespace HISA
 
             Application.Current.Dispatcher.Invoke((Action)(() =>
             {
-                if(playSound || (!MapConf.PlaySoundOnlyInDangerZone && MapConf.PlayIntelSound))
+                bool shouldPlaySound = hasKnownSystem && (playSound || (!MapConf.PlaySoundOnlyInDangerZone && MapConf.PlayIntelSound));
+                if(shouldPlaySound)
                 {
                     try
                     {

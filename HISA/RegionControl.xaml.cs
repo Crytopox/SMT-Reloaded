@@ -3439,10 +3439,10 @@ namespace HISA
 
             int shipCount = intelData.ReportedShips?.Count ?? 0;
             int classCount = intelData.ReportedShipClasses?.Count(c => c != IntelShipClass.UnknownHostile) ?? 0;
-            int pilotMentions = EstimatePilotMentionsFromIntelText(intelData);
-            if(pilotMentions == 0 && intelData.ReportedPilots != null)
+            int pilotMentions = intelData.ReportedPilots?.Count ?? 0;
+            if(pilotMentions == 0)
             {
-                pilotMentions = intelData.ReportedPilots.Count;
+                pilotMentions = EstimatePilotMentionsFromIntelText(intelData);
             }
 
             int baseCount = Math.Max(shipCount, Math.Max(classCount, pilotMentions));
@@ -3620,6 +3620,11 @@ namespace HISA
                 {
                     mention = token + " " + tokens[i + 1];
                     i++;
+                    if(i + 1 < tokens.Count && IsCandidateNameToken(tokens[i + 1]))
+                    {
+                        mention += " " + tokens[i + 1];
+                        i++;
+                    }
                 }
 
                 nameMentions.Add(mention);
