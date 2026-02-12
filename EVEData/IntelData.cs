@@ -10,6 +10,8 @@ namespace HISA.EVEData
     {
         UnknownHostile,
         Capsule,
+        Corvette,
+        Shuttle,
         Frigate,
         Destroyer,
         Cruiser,

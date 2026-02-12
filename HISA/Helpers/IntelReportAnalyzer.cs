@@ -19,7 +19,7 @@ public static class IntelReportAnalyzer
         "local", "status", "reported", "report", "intel", "dscan", "scan", "camp", "gate", "in", "on", "at",
         "to", "from", "with", "plus", "is", "are", "was", "were", "spike", "spiked", "ship", "ships", "pilot", "pilots",
         "frigate", "destroyer", "cruiser", "battlecruiser", "battleship", "industrial", "freighter", "capital", "fighter",
-        "mining", "structure", "capsule", "pod", "pods", "cyno", "bubble", "dictor", "hictor", "logi", "jump", "inbound", "outbound"
+        "mining", "structure", "capsule", "corvette", "shuttle", "pod", "pods", "cyno", "bubble", "dictor", "hictor", "logi", "jump", "inbound", "outbound"
     };
 
     public static string GetShipClassLabel(IntelShipClass shipClass)
@@ -28,6 +28,8 @@ public static class IntelReportAnalyzer
         {
             case IntelShipClass.UnknownHostile: return "Hostile (unknown class)";
             case IntelShipClass.Capsule: return "Capsule";
+            case IntelShipClass.Corvette: return "Corvette";
+            case IntelShipClass.Shuttle: return "Shuttle";
             case IntelShipClass.Frigate: return "Frigate";
             case IntelShipClass.Destroyer: return "Destroyer";
             case IntelShipClass.Cruiser: return "Cruiser";
@@ -240,17 +242,19 @@ public static class IntelReportAnalyzer
         switch(shipClass)
         {
             case IntelShipClass.Capsule: return 0;
-            case IntelShipClass.Frigate: return 1;
-            case IntelShipClass.Destroyer: return 2;
-            case IntelShipClass.Cruiser: return 3;
-            case IntelShipClass.Battlecruiser: return 4;
-            case IntelShipClass.Battleship: return 5;
-            case IntelShipClass.Industrial: return 6;
-            case IntelShipClass.Mining: return 7;
-            case IntelShipClass.Freighter: return 8;
-            case IntelShipClass.Capital: return 9;
-            case IntelShipClass.Fighter: return 10;
-            case IntelShipClass.Structure: return 11;
+            case IntelShipClass.Corvette: return 1;
+            case IntelShipClass.Shuttle: return 2;
+            case IntelShipClass.Frigate: return 3;
+            case IntelShipClass.Destroyer: return 4;
+            case IntelShipClass.Cruiser: return 5;
+            case IntelShipClass.Battlecruiser: return 6;
+            case IntelShipClass.Battleship: return 7;
+            case IntelShipClass.Industrial: return 8;
+            case IntelShipClass.Mining: return 9;
+            case IntelShipClass.Freighter: return 10;
+            case IntelShipClass.Capital: return 11;
+            case IntelShipClass.Fighter: return 12;
+            case IntelShipClass.Structure: return 13;
             case IntelShipClass.UnknownHostile:
             default:
                 return 100;

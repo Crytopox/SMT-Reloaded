@@ -1824,6 +1824,8 @@ namespace HISA.EVEData
             ShipTypes.Add("89647", "Pioneer Consortium Issue");
             ShipTypes.Add("89607", "Odysseus");
 
+            PopulateIntelShipClassLookupFromShipTypes();
+
 
 
 
@@ -3536,6 +3538,12 @@ namespace HISA.EVEData
             {
                 Systems = new List<System>();
             }
+            if(ShipTypes == null)
+            {
+                ShipTypes = new SerializableDictionary<string, string>();
+            }
+
+            PopulateIntelShipClassLookupFromShipTypes(resetExisting: true);
 
             foreach(System s in Systems)
             {
@@ -5099,8 +5107,13 @@ namespace HISA.EVEData
                 case "29":  // Capsule
                     return IntelShipClass.Capsule;
 
-                case "25":  // Frigate
                 case "237": // Corvette
+                    return IntelShipClass.Corvette;
+
+                case "31": // Shuttle
+                    return IntelShipClass.Shuttle;
+
+                case "25":  // Frigate
                 case "324": // Assault Frigate
                 case "830": // Covert Ops
                 case "831": // Interceptor
@@ -5188,6 +5201,11 @@ namespace HISA.EVEData
                 return IntelShipClass.UnknownHostile;
             }
 
+            if(IntelShipClassOverrides.ByShipName.TryGetValue(shipName, out IntelShipClass overrideClass))
+            {
+                return overrideClass;
+            }
+
             List<string> tokens = TokenizeIntelWords(shipName);
             HashSet<string> tokenSet = new HashSet<string>(tokens, StringComparer.OrdinalIgnoreCase);
             string textLower = shipName.ToLowerInvariant();
@@ -5240,6 +5258,38 @@ namespace HISA.EVEData
             return IntelShipClass.UnknownHostile;
         }
 
+        private void PopulateIntelShipClassLookupFromShipTypes(bool resetExisting = false)
+        {
+            if(resetExisting || _intelShipClassByName == null)
+            {
+                _intelShipClassByName = new Dictionary<string, IntelShipClass>(StringComparer.OrdinalIgnoreCase);
+            }
+
+            _intelShipPatternsByFirstToken = new Dictionary<string, List<IntelShipPattern>>(StringComparer.OrdinalIgnoreCase);
+            _intelShipPatternReady = false;
+
+            if(ShipTypes != null)
+            {
+                foreach(string shipName in ShipTypes.Values)
+                {
+                    if(string.IsNullOrWhiteSpace(shipName))
+                    {
+                        continue;
+                    }
+
+                    if(!_intelShipClassByName.ContainsKey(shipName))
+                    {
+                        _intelShipClassByName[shipName] = GuessShipClassFromShipName(shipName);
+                    }
+                }
+            }
+
+            foreach(KeyValuePair<string, IntelShipClass> kvp in IntelShipClassOverrides.ByShipName)
+            {
+                _intelShipClassByName[kvp.Key] = kvp.Value;
+            }
+        }
+
         private void EnsureIntelShipPatternIndex()
         {
             if(_intelShipPatternReady)
@@ -5257,41 +5307,51 @@ namespace HISA.EVEData
                 Dictionary<string, List<IntelShipPattern>> shipPatterns = new Dictionary<string, List<IntelShipPattern>>(StringComparer.OrdinalIgnoreCase);
                 HashSet<string> uniqueNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+                void TryAddShipPattern(string shipName)
+                {
+                    if(string.IsNullOrWhiteSpace(shipName) || !uniqueNames.Add(shipName))
+                    {
+                        return;
+                    }
+
+                    List<string> tokens = TokenizeIntelWords(shipName);
+                    if(tokens.Count == 0 || tokens.Count > 5)
+                    {
+                        return;
+                    }
+
+                    // Ignore very short one-word tokens as they create too much noise.
+                    if(tokens.Count == 1 && tokens[0].Length < 4)
+                    {
+                        return;
+                    }
+
+                    string firstToken = tokens[0];
+                    if(!shipPatterns.TryGetValue(firstToken, out List<IntelShipPattern> patterns))
+                    {
+                        patterns = new List<IntelShipPattern>();
+                        shipPatterns[firstToken] = patterns;
+                    }
+
+                    patterns.Add(new IntelShipPattern
+                    {
+                        Name = shipName,
+                        Tokens = tokens.ToArray(),
+                        ShipClass = _intelShipClassByName.TryGetValue(shipName, out IntelShipClass shipClass) ? shipClass : GuessShipClassFromShipName(shipName)
+                    });
+                }
+
                 if(ShipTypes != null)
                 {
                     foreach(string shipName in ShipTypes.Values)
                     {
-                        if(string.IsNullOrWhiteSpace(shipName) || !uniqueNames.Add(shipName))
-                        {
-                            continue;
-                        }
-
-                        List<string> tokens = TokenizeIntelWords(shipName);
-                        if(tokens.Count == 0 || tokens.Count > 5)
-                        {
-                            continue;
-                        }
-
-                        // Ignore very short one-word tokens as they create too much noise.
-                        if(tokens.Count == 1 && tokens[0].Length < 4)
-                        {
-                            continue;
-                        }
-
-                        string firstToken = tokens[0];
-                        if(!shipPatterns.TryGetValue(firstToken, out List<IntelShipPattern> patterns))
-                        {
-                            patterns = new List<IntelShipPattern>();
-                            shipPatterns[firstToken] = patterns;
-                        }
-
-                        patterns.Add(new IntelShipPattern
-                        {
-                            Name = shipName,
-                            Tokens = tokens.ToArray(),
-                            ShipClass = _intelShipClassByName.TryGetValue(shipName, out IntelShipClass shipClass) ? shipClass : GuessShipClassFromShipName(shipName)
-                        });
+                        TryAddShipPattern(shipName);
                     }
+                }
+
+                foreach(string shipName in IntelShipClassOverrides.ByShipName.Keys)
+                {
+                    TryAddShipPattern(shipName);
                 }
 
                 foreach(List<IntelShipPattern> patterns in shipPatterns.Values)

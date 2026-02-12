@@ -42,9 +42,9 @@ namespace HISA
         private const double JUMP_RANGE_SEGMENT_RING_SIZE = SYSTEM_SHAPE_SIZE + 14;
         private const int MAX_INTEL_BADGES = 6;
         private const double INTEL_RING_DIAMETER = 34;
-        private const double INTEL_BADGE_SIZE = 10;
+        private const double INTEL_BADGE_SIZE = 14;
         private const double INTEL_RING_STROKE_THICKNESS = 11.0;
-        private const double INTEL_BADGE_RING_INSET = 0.0;
+        private const double INTEL_BADGE_RING_INSET = 1.6;
         private const double INTEL_RING_ROTATION_SECONDS = 9.0;
         private const int ZINDEX_INTEL_RING = 98;
         private const int ZINDEX_INTEL_BADGE = 1;
@@ -261,6 +261,8 @@ namespace HISA
             fightImage = ResourceLoader.LoadBitmapFromResource("Images/fight.png");
             intelShipClassIcons[IntelShipClass.UnknownHostile] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/ship.png");
             intelShipClassIcons[IntelShipClass.Capsule] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/capsule_16.png");
+            intelShipClassIcons[IntelShipClass.Corvette] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/rookie_16.png");
+            intelShipClassIcons[IntelShipClass.Shuttle] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/shuttle_16.png");
             intelShipClassIcons[IntelShipClass.Frigate] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/frigate_16.png");
             intelShipClassIcons[IntelShipClass.Destroyer] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/destroyer_16.png");
             intelShipClassIcons[IntelShipClass.Cruiser] = ResourceLoader.LoadBitmapFromResource("Images/Brackets/cruiser_16.png");
@@ -2987,6 +2989,15 @@ namespace HISA
             }
         }
 
+        private static Color BlendColours(Color baseColor, Color overlayColor, byte overlayAlpha)
+        {
+            double t = Math.Max(0.0, Math.Min(1.0, overlayAlpha / 255.0));
+            byte r = (byte)Math.Round((baseColor.R * (1.0 - t)) + (overlayColor.R * t));
+            byte g = (byte)Math.Round((baseColor.G * (1.0 - t)) + (overlayColor.G * t));
+            byte b = (byte)Math.Round((baseColor.B * (1.0 - t)) + (overlayColor.B * t));
+            return Color.FromRgb(r, g, b);
+        }
+
         private void AddSystemIntelOverlay()
         {
             if(Region == null || Region.MapSystems == null || MapConf == null)
@@ -2994,7 +3005,6 @@ namespace HISA
                 return;
             }
 
-            Brush intelBlobBrush = new SolidColorBrush(MapConf.ActiveColourScheme.IntelOverlayColour);
             DateTime now = DateTime.Now;
             double maxIntelSeconds = Math.Max(1.0, (double)(MapConf?.MaxIntelSeconds ?? 1));
             Dictionary<string, IntelData> latestIntelBySystem = GetLatestIntelBySystem();
@@ -3024,12 +3034,19 @@ namespace HISA
                 double ringPathRadius = ringDiameter / 2.0;
                 double ringVisualRadius = ringPathRadius + (INTEL_RING_STROKE_THICKNESS / 2.0);
                 double ringVisualDiameter = ringVisualRadius * 2.0;
+                double freshStrength = Math.Max(0.0, Math.Min(1.0, 1.0 - radiusScale));
+                Color themeIntelColor = MapConf.ActiveColourScheme.IntelOverlayColour;
+                Color earlyAlertRed = Color.FromRgb(232, 44, 44);
+                byte redBlend = (byte)(Math.Max(0.0, Math.Min(1.0, freshStrength * 0.9)) * 255.0);
+                Color ringColor = BlendColours(themeIntelColor, earlyAlertRed, redBlend);
+                SolidColorBrush intelBlobBrush = new SolidColorBrush(ringColor);
+                intelBlobBrush.Freeze();
 
                 Canvas intelOverlay = new Canvas
                 {
                     Width = ringVisualDiameter,
                     Height = ringVisualDiameter,
-                    Opacity = Math.Max(0.78, 1.0 - (radiusScale * 0.22)),
+                    Opacity = Math.Max(0.82, 1.0 - (radiusScale * 0.18)),
                     IsHitTestVisible = false
                 };
 
@@ -3210,7 +3227,7 @@ namespace HISA
             {
                 IntelShipClass shipClass = badges[i];
                 double angle = (-Math.PI / 2) + ((Math.PI * 2.0 * i) / badgeCount);
-                double badgeRingRadius = Math.Max(12, ringRadius - INTEL_BADGE_RING_INSET);
+                double badgeRingRadius = Math.Max(12, ringRadius - (INTEL_RING_STROKE_THICKNESS * 0.3) - INTEL_BADGE_RING_INSET);
                 double x = centerX + (Math.Cos(angle) * badgeRingRadius) - (INTEL_BADGE_SIZE / 2.0);
                 double y = centerY + (Math.Sin(angle) * badgeRingRadius) - (INTEL_BADGE_SIZE / 2.0);
 
