@@ -3303,6 +3303,97 @@ namespace HISA
             return Color.FromRgb(r, g, b);
         }
 
+        private static double GetIntelThreatScale(int hostileCount)
+        {
+            if(hostileCount <= 1) return 0.0;
+            if(hostileCount <= 2) return 0.12;
+            if(hostileCount <= 4) return 0.26;
+            if(hostileCount <= 6) return 0.4;
+            if(hostileCount <= 10) return 0.56;
+            if(hostileCount <= 15) return 0.7;
+            return 0.82;
+        }
+
+        private Point GetIntelCountBadgeCenter(MapSystem sys, double ringVisualRadius, double badgeSize)
+        {
+            double offsetDiag = ringVisualRadius - (badgeSize * 0.12);
+            double offsetCard = ringVisualRadius - (badgeSize * 0.10);
+            double sx = sys.Layout.X;
+            double sy = sys.Layout.Y;
+
+            Point[] candidates = new[]
+            {
+                new Point(sx + offsetDiag, sy - offsetDiag), // NE
+                new Point(sx - offsetDiag, sy - offsetDiag), // NW
+                new Point(sx + offsetDiag, sy + offsetDiag), // SE
+                new Point(sx - offsetDiag, sy + offsetDiag), // SW
+                new Point(sx, sy - offsetCard),              // N
+                new Point(sx + offsetCard, sy),              // E
+                new Point(sx, sy + offsetCard),              // S
+                new Point(sx - offsetCard, sy),              // W
+            };
+
+            bool hasTopRightIcon = sys.ActualSystem != null && (sys.ActualSystem.HasIceBelt || sys.ActualSystem.HasBlueA0Star);
+
+            Point best = candidates[0];
+            double bestScore = double.MinValue;
+
+            foreach(Point c in candidates)
+            {
+                double dx = c.X - sx;
+                double dy = c.Y - sy;
+                double score = Math.Sqrt((dx * dx) + (dy * dy));
+
+                switch(sys.TextPos)
+                {
+                    case MapSystem.TextPosition.Top:
+                        if(c.Y < sy) score -= 180;
+                        break;
+                    case MapSystem.TextPosition.Bottom:
+                        if(c.Y > sy) score -= 180;
+                        break;
+                    case MapSystem.TextPosition.Left:
+                        if(c.X < sx) score -= 180;
+                        break;
+                    case MapSystem.TextPosition.Right:
+                        if(c.X > sx) score -= 180;
+                        break;
+                }
+
+                if(ShowInfrastructureUpgrades)
+                {
+                    switch(sys.TextPos)
+                    {
+                        case MapSystem.TextPosition.Top:
+                            if(c.Y < sy) score -= 70;
+                            break;
+                        case MapSystem.TextPosition.Bottom:
+                            if(c.Y > sy) score -= 70;
+                            break;
+                        case MapSystem.TextPosition.Left:
+                            if(c.X < sx) score -= 70;
+                            break;
+                        case MapSystem.TextPosition.Right:
+                            if(c.X > sx) score -= 70;
+                            break;
+                    }
+                }
+
+                if(hasTopRightIcon && c.X > sx && c.Y < sy)
+                {
+                    score -= 120;
+                }
+
+                if(score > bestScore)
+                {
+                    bestScore = score;
+                    best = c;
+                }
+            }
+
+            return best;
+        }
+
         private void AddSystemIntelOverlay()
         {
             if(Region == null || Region.MapSystems == null || MapConf == null)
@@ -3334,11 +3425,12 @@ namespace HISA
                     continue;
                 }
 
-                // keep intel ring static and close to the system node; age is represented by fade only
-                double ringDiameter = INTEL_RING_DIAMETER;
+                int hostileCount = Math.Max(1, IntelReportAnalyzer.EstimateHostileCount(id));
+                double threatScale = GetIntelThreatScale(hostileCount);
+                double ringDiameter = INTEL_RING_DIAMETER + (threatScale * 18.0);
+                double ringStrokeThickness = INTEL_RING_STROKE_THICKNESS + (threatScale * 3.2);
                 double ringPathRadius = ringDiameter / 2.0;
-                double ringVisualRadius = ringPathRadius + (INTEL_RING_STROKE_THICKNESS / 2.0);
-                double ringVisualDiameter = ringVisualRadius * 2.0;
+                double ringVisualRadius = ringPathRadius + (ringStrokeThickness / 2.0);
                 double freshStrength = Math.Max(0.0, Math.Min(1.0, 1.0 - radiusScale));
                 Color themeIntelColor = MapConf.ActiveColourScheme.IntelOverlayColour;
                 Color earlyAlertRed = Color.FromRgb(232, 44, 44);
@@ -3347,27 +3439,49 @@ namespace HISA
                 SolidColorBrush intelBlobBrush = new SolidColorBrush(ringColor);
                 intelBlobBrush.Freeze();
 
+                double glowDiameter = ringDiameter + 10.0 + (threatScale * 14.0);
+                double glowStrokeThickness = 4.0 + (threatScale * 2.5);
+                double glowVisualRadius = (glowDiameter / 2.0) + (glowStrokeThickness / 2.0);
+                double overlayRadius = Math.Max(ringVisualRadius, glowVisualRadius);
+                double overlayDiameter = overlayRadius * 2.0;
+
+                byte glowAlpha = (byte)Math.Clamp(60 + (int)(threatScale * 70.0) + (int)(freshStrength * 30.0), 0, 180);
+                SolidColorBrush glowBrush = new SolidColorBrush(Color.FromArgb(glowAlpha, ringColor.R, ringColor.G, ringColor.B));
+                glowBrush.Freeze();
+
                 Canvas intelOverlay = new Canvas
                 {
-                    Width = ringVisualDiameter,
-                    Height = ringVisualDiameter,
-                    Opacity = Math.Max(0.82, 1.0 - (radiusScale * 0.18)),
+                    Width = overlayDiameter,
+                    Height = overlayDiameter,
+                    Opacity = Math.Max(0.84, 1.0 - (radiusScale * 0.14)),
                     IsHitTestVisible = false
                 };
+
+                Shape intelGlow = new Ellipse() { Height = glowDiameter, Width = glowDiameter };
+                intelGlow.Fill = Brushes.Transparent;
+                intelGlow.Stroke = glowBrush;
+                intelGlow.StrokeThickness = glowStrokeThickness;
+                intelGlow.IsHitTestVisible = false;
+
+                double localCenter = overlayRadius;
+                Canvas.SetLeft(intelGlow, localCenter - (glowDiameter / 2.0));
+                Canvas.SetTop(intelGlow, localCenter - (glowDiameter / 2.0));
+                Canvas.SetZIndex(intelGlow, -1);
+                intelOverlay.Children.Add(intelGlow);
 
                 Shape intelShape = new Ellipse() { Height = ringDiameter, Width = ringDiameter };
                 intelShape.Fill = Brushes.Transparent;
                 intelShape.Stroke = intelBlobBrush;
-                intelShape.StrokeThickness = INTEL_RING_STROKE_THICKNESS;
+                intelShape.StrokeThickness = ringStrokeThickness;
                 intelShape.IsHitTestVisible = false;
 
-                double localCenter = ringVisualRadius;
                 Canvas.SetLeft(intelShape, localCenter - ringPathRadius);
                 Canvas.SetTop(intelShape, localCenter - ringPathRadius);
                 Canvas.SetZIndex(intelShape, 0);
                 intelOverlay.Children.Add(intelShape);
 
-                AddIntelAlertBadges(id, intelOverlay, localCenter, localCenter, ringPathRadius);
+                double alertBadgeSize = INTEL_BADGE_SIZE + (threatScale * 2.0);
+                AddIntelAlertBadges(id, intelOverlay, localCenter, localCenter, ringPathRadius, ringStrokeThickness, alertBadgeSize);
 
                 RotateTransform rt = new RotateTransform
                 {
@@ -3380,7 +3494,7 @@ namespace HISA
                 {
                     From = 360,
                     To = 0,
-                    Duration = new Duration(TimeSpan.FromSeconds(INTEL_RING_ROTATION_SECONDS)),
+                    Duration = new Duration(TimeSpan.FromSeconds(Math.Max(4.2, INTEL_RING_ROTATION_SECONDS - (threatScale * 3.4)))),
                     RepeatBehavior = RepeatBehavior.Forever
                 };
                 Timeline.SetDesiredFrameRate(da, 20);
@@ -3393,18 +3507,17 @@ namespace HISA
 
                 DynamicMapElements.Add(intelOverlay);
 
-                AddIntelHostileCountBadge(id, sys, ringVisualRadius);
+                AddIntelHostileCountBadge(id, sys, ringVisualRadius, hostileCount);
             }
         }
 
-        private void AddIntelHostileCountBadge(IntelData intelData, MapSystem sys, double ringVisualRadius)
+        private void AddIntelHostileCountBadge(IntelData intelData, MapSystem sys, double ringVisualRadius, int hostileCount)
         {
             if(intelData == null || sys == null || intelData.ClearNotification)
             {
                 return;
             }
 
-            int hostileCount = IntelReportAnalyzer.EstimateHostileCount(intelData);
             if(hostileCount <= 0)
             {
                 return;
@@ -3446,10 +3559,9 @@ namespace HISA
                 IsHitTestVisible = false
             };
 
-            double badgeCenterX = sys.Layout.X + (ringVisualRadius * 0.72);
-            double badgeCenterY = sys.Layout.Y - (ringVisualRadius * 0.72);
-            Canvas.SetLeft(badge, badgeCenterX - (badgeSize / 2.0));
-            Canvas.SetTop(badge, badgeCenterY - (badgeSize / 2.0));
+            Point badgeCenter = GetIntelCountBadgeCenter(sys, ringVisualRadius, badgeSize);
+            Canvas.SetLeft(badge, badgeCenter.X - (badgeSize / 2.0));
+            Canvas.SetTop(badge, badgeCenter.Y - (badgeSize / 2.0));
             Canvas.SetZIndex(badge, ZINDEX_INTEL_COUNT);
             MainCanvas.Children.Add(badge);
             DynamicMapElements.Add(badge);
@@ -3513,7 +3625,7 @@ namespace HISA
         }
 
 
-        private void AddIntelAlertBadges(IntelData intelData, Canvas parentCanvas, double centerX, double centerY, double ringRadius)
+        private void AddIntelAlertBadges(IntelData intelData, Canvas parentCanvas, double centerX, double centerY, double ringRadius, double ringStrokeThickness, double intelBadgeSize)
         {
             if(intelData == null || parentCanvas == null)
             {
@@ -3532,14 +3644,14 @@ namespace HISA
             {
                 IntelShipClass shipClass = badges[i];
                 double angle = (-Math.PI / 2) + ((Math.PI * 2.0 * i) / badgeCount);
-                double badgeRingRadius = Math.Max(12, ringRadius - (INTEL_RING_STROKE_THICKNESS * 0.3) - INTEL_BADGE_RING_INSET);
-                double x = centerX + (Math.Cos(angle) * badgeRingRadius) - (INTEL_BADGE_SIZE / 2.0);
-                double y = centerY + (Math.Sin(angle) * badgeRingRadius) - (INTEL_BADGE_SIZE / 2.0);
+                double badgeRingRadius = Math.Max(12, ringRadius - (ringStrokeThickness * 0.3) - INTEL_BADGE_RING_INSET);
+                double x = centerX + (Math.Cos(angle) * badgeRingRadius) - (intelBadgeSize / 2.0);
+                double y = centerY + (Math.Sin(angle) * badgeRingRadius) - (intelBadgeSize / 2.0);
 
                 Image badge = new Image
                 {
-                    Width = INTEL_BADGE_SIZE,
-                    Height = INTEL_BADGE_SIZE,
+                    Width = intelBadgeSize,
+                    Height = intelBadgeSize,
                     Source = GetIntelShipClassIcon(shipClass),
                     Stretch = Stretch.Uniform,
                     ToolTip = IntelReportAnalyzer.GetBadgeTooltip(intelData, shipClass, overflowFighterFill, MAX_INTEL_BADGES),
@@ -3627,15 +3739,6 @@ namespace HISA
                 FontWeight = FontWeights.SemiBold
             };
             reportBody.Children.Add(ageLine);
-
-            Label timeLine = new Label
-            {
-                Padding = one,
-                Margin = new Thickness(0),
-                Content = $"Time : {latestIntel.IntelTime:HH:mm:ss}",
-                Foreground = labelBrush
-            };
-            reportBody.Children.Add(timeLine);
 
             if(ships.Count > 0)
             {
